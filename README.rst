@@ -7,12 +7,15 @@ Infinite Image Scroller
 
 Script loops through all specified image files/dirs, resizes each to window
 width/height (preserving aspect ratio) and scrolls them one after another,
-i.e. concatenated into one endless "image feed".
+i.e. concatenated into one endless "image feed", but loading images only as
+they're close to be scrolled into view.
 
 ``--auto-scroll`` option allows slideshow-like behavior, but otherwise one can
 scroll through these manually.
 
-Needs Python-3.x and `PyGObject <http://live.gnome.org/PyGObject>`_ to run.
+Needs Python-3.x, `Gtk3 <https://wiki.gnome.org/Projects/GTK%2B>`_ and
+`PyGObject <https://wiki.gnome.org/action/show/Projects/PyGObject>`_ to run.
+All of these usually come pre-installed on desktop linuxes.
 
 Aimed to be rather simple and straightforward, not a full-fledged image viewer.
 
