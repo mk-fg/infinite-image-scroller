@@ -35,8 +35,15 @@ newline-separated list-file or stdin::
   % ./infinite-image-scroller.py -f carousel.list --auto-scroll 10:0.1
 
 ``-a/--auto-scroll`` option takes ``px[:seconds]`` parameter for scrolling
-"step" and how often it is repeated (default is 1 second, if omitted), i.e. ``-a
-10:0.1`` means "scroll by 10px every 0.1 seconds".
+"step" and how often it is repeated (default is 1 second, if omitted), i.e.
+``-a 10:0.1`` means "scroll by 10px every 0.1 seconds".
+
+More fancy display options - scrolling transparent 800px sidebar on the right::
+
+  % ./infinite-image-scroller.py --pos=800xS-0 \
+      --spacing=0 --opacity=0.7 --queue=8:0.8 -a 10:0.2 -- /mnt/images/
+
+Transparency options should only work with compositing WM though.
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 

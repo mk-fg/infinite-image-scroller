@@ -270,7 +270,7 @@ def main(args=None):
 		except ValueError: px, s = float(opts.auto_scroll), 1
 		conf.auto_scroll = px, s
 	if opts.pos:
-		m = re.search(r'^(\d+x\d+)?([-+]\d+)?([-+]\d+)?$', opts.pos)
+		m = re.search(r'^((?:\d+|S)x(?:\d+|S))?([-+]\d+)?([-+]\d+)?$', opts.pos)
 		if not m: parser.error('Invalid size/position spec: {!r}', opts.pos)
 		size, x, y = m.groups()
 		if size: conf.win_w, conf.win_h = size.split('x', 1)
