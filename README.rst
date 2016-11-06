@@ -44,16 +44,13 @@ See ``./infinite-image-scroller.py --help`` for full list of available options.
 TODO
 ----
 
-- Option for a horizontal scrolling instead of vertical, and maybe 2d grid,
+- Option for a horizontal scrolling instead of vertical, maybe 2d grid,
   reverse direction.
 
-- Options for window position, size, type, border and misc WM hints.
+- Options for window type, border and misc other WM hints.
 
 - Random/shuffle/loop options.
 
-- Configuration for hardcoded defaults like vbox_spacing, scroll_delay,
-  queue_size, etc.
+- More hotkeys (incl. arrows for scrolling), right-click menu controls maybe.
 
-- Fancy options like window opacity and such.
-
-- Some hotkeys (beyond scrolling) or right-click menu controls maybe.
+- Load stuff when scrolling in either direction, not just one.
