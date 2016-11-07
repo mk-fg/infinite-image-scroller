@@ -20,10 +20,11 @@ All of these usually come pre-installed on desktop linuxes.
 Aimed to be rather simple and straightforward, not a full-fledged image viewer.
 
 
-Usage examples
---------------
 
-Simple usage::
+Usage
+-----
+
+Simple usage example::
 
   % ./infinite-image-scroller.py path/to/my-image-dir
   % ./infinite-image-scroller.py image1.jpg image2.jpg image3.jpg
@@ -41,11 +42,32 @@ newline-separated list-file or stdin::
 More fancy display options - scrolling transparent 800px sidebar on the right::
 
   % ./infinite-image-scroller.py --pos=800xS-0 \
-      --spacing=0 --opacity=0.7 --queue=8:0.8 -a 10:0.2 -- /mnt/images/
+      --spacing=10 --opacity=0.7 --queue=8:0.8 -a 10:0.2 -- /mnt/images/
 
 Transparency options should only work with compositing WM though.
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
+
+
+Appearance
+``````````
+
+`Gtk3 styles <https://developer.gnome.org/gtk3/stable/chap-css-overview.html>`_
+can be used to style app window somewhat.
+
+Full hierarchy of gtk3 widgets used::
+
+  GtkWindow #scroller
+    GtkScrolledWindow
+      GtkVBox
+        Image
+        Image
+        ...
+
+Default css just makes backgrounds in all of these transparent, which doesn't
+affect opacity of the images, which can be controlled with ``-o/--opacity``
+option instead.
+
 
 
 TODO
