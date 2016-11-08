@@ -30,15 +30,13 @@ class ScrollerConf:
 
 	app_id = 'net.fraggod.infinite-image-scroller'
 	no_session = False
+
+	win_title = 'infinite-image-scroller'
+	win_role = 'scroller-main'
+	win_icon = None
+	win_default_size = 700, 500
 	win_w = win_h = None
 	win_x = win_y = None
-	win_default_size = 700, 500
-	vbox_spacing = 3
-	queue_size = 3
-	queue_preload_at = 0.7
-	auto_scroll = None
-	opacity = 1.0
-	scroll_event_delay = 0.2
 	wm_hints = None
 	wm_hints_all = (
 		' focus_on_map modal resizable hide_titlebar_when_maximized'
@@ -48,7 +46,13 @@ class ScrollerConf:
 	wm_type_hints = Gdk.WindowTypeHint.NORMAL
 	wm_type_hints_all = dict(
 		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
-	# XXX: title, role, icon_name / default_icon_name
+
+	vbox_spacing = 3
+	scroll_event_delay = 0.2
+	queue_size = 3
+	queue_preload_at = 0.7
+	image_opacity = 1.0
+	auto_scroll = None
 
 	def __init__(self, **kws):
 		for k, v in kws.items():
@@ -63,6 +67,12 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.src_paths_iter, self.conf = src_paths_iter, conf
 		self.box_images = deque()
 		self.log = get_logger('win')
+
+		self.set_title(self.conf.win_title)
+		self.set_role(self.conf.win_role)
+		if self.conf.win_icon:
+			self.log.debug('Using icon: {}', self.conf.win_icon)
+			self.set_icon_name(self.conf.win_icon)
 
 		self.init_widgets()
 		self.init_content()
@@ -199,7 +209,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
 		image = Gtk.Image()
 		image.w_chk = None
-		if self.conf.opacity < 1.0: image.set_opacity(self.conf.opacity)
+		if self.conf.image_opacity < 1.0:
+			image.set_opacity(self.conf.image_opacity)
 		self.connect('check_resize', self._update_image, pixbuf, image)
 		return image
 
@@ -301,6 +312,11 @@ def main(args=None):
 				' List of recognized type-hints: [ {} ], all are unset by default.'
 				' Probably does not make sense to use multiple of these at once.' )\
 			.format(', '.join(conf.wm_type_hints_all)))
+	group.add_argument('-i', '--icon-name', metavar='icon',
+		help='Name of the XDG icon to use for the window.'
+			' Can be icon from a theme, one of the default gtk ones, and such.'
+			' See XDG standards for how this name gets resolved into actual file path.'
+			' Example: image-x-generic.')
 
 	group = parser.add_argument_group('Misc / debug')
 	parser.add_argument('-n', '--no-register-session', action='store_true',
@@ -349,8 +365,9 @@ def main(args=None):
 	if opts.wm_type_hints:
 		for k in opts.wm_type_hints.replace(',', ' ').split():
 			conf.wm_type_hints |= conf.wm_type_hints_all[k]
+	if opts.icon_name: conf.win_icon = opts.icon_name
 	conf.vbox_spacing = opts.spacing
-	conf.opacity = opts.opacity
+	conf.image_opacity = opts.opacity
 	conf.no_session = opts.no_register_session
 
 	log.debug('Starting application...')
