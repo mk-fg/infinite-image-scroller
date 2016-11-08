@@ -45,9 +45,8 @@ class ScrollerConf:
 
 class ScrollerWindow(Gtk.ApplicationWindow):
 
-
 	def __init__(self, app, src_paths_iter, conf):
-		super(ScrollerWindow, self).__init__(name='scroller', application=app)
+		super(ScrollerWindow, self).__init__(name='infinite-image-scroller', application=app)
 		self.src_paths_iter, self.conf = src_paths_iter, conf
 		self.box_images = deque()
 		self.log = get_logger('win')
@@ -59,7 +58,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 	def init_widgets(self):
 		css = Gtk.CssProvider()
 		css.load_from_data('\n'.join([
-			'#scroller, #scroller * { background: transparent; }' ]).encode())
+			'#infinite-image-scroller,',
+			'#infinite-image-scroller * { background: transparent; }' ]).encode())
 		Gtk.StyleContext.add_provider_for_screen(
 			Gdk.Screen.get_default(), css,
 			Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION )
@@ -81,7 +81,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.connect('show', self._place_window, 'show')
 		self.connect( 'configure-event',
 			ft.partial(self._place_window, ev_done='configure-event') )
-
 
 	def init_content(self):
 		for n in range(self.conf.queue_size): self._show_next_image()

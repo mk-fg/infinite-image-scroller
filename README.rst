@@ -49,24 +49,48 @@ Transparency options should only work with compositing WM though.
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 
 
-Appearance
-``````````
+Appearance / key bindings
+`````````````````````````
 
-`Gtk3 styles <https://developer.gnome.org/gtk3/stable/chap-css-overview.html>`_
-can be used to style app window somewhat.
+`Gtk3 CSS <https://developer.gnome.org/gtk3/stable/chap-css-overview.html>`_
+(e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window somewhat
+and also to define new key bindings there.
 
-Full hierarchy of gtk3 widgets used::
+Full hierarchy of gtk3 widgets used (without "Gtk" prefixes)::
 
-  GtkWindow #scroller
-    GtkScrolledWindow
-      GtkVBox
+  Window #infinite-image-scroller
+    ScrolledWindow
+      VBox
         Image
         Image
         ...
 
-Default css just makes backgrounds in all of these transparent, which doesn't
-affect opacity of the images, which can be controlled with ``-o/--opacity``
-option instead.
+(to see tree of these for running app, find all style nodes, tweak stuff on the
+fly and such, use `Gtk-Inspector <https://wiki.gnome.org/Projects/GTK%2B/Inspector>`_)
+
+Default css just makes backgrounds in all of these transparent, which doesn't affect
+opacity of the images, which can be controlled with ``-o/--opacity`` option instead.
+
+For example, to add Vi keybindings for scrolling only in this window, following
+can be added to ``~/.config/gtk-3.0/gtk.css``::
+
+  @binding-set image-scroller-keys {
+    bind "k" { "scroll-child" (step-up, 0) };
+    bind "j" { "scroll-child" (step-down, 0) };
+    bind "h" { "scroll-child" (step-left, 1) };
+    bind "l" { "scroll-child" (step-right, 1) };
+  }
+
+  #infinite-image-scroller scrolledwindow {
+    -gtk-key-bindings: image-scroller-keys;
+  }
+
+Or, to have half-transparent dark-greenish background in the window (should only
+be poking-out with ``--spacing`` or non-solid ``--opacity`` settings)::
+
+  #infinite-image-scroller {
+    background: rgba(16,28,16,0.5);
+  }
 
 
 
