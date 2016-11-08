@@ -1,14 +1,16 @@
 =======================
 Infinite Image Scroller
 =======================
-------------------------------------------------------------------
- Python3/Gtk3 script to scroll images endlessly across the window
-------------------------------------------------------------------
+-------------------------------------------------------------
+ Python3/Gtk3 desktop app to scroll images across the window
+-------------------------------------------------------------
 
 Script loops through all specified image files/dirs, resizes each to window
 width/height (preserving aspect ratio) and scrolls them one after another,
 i.e. concatenated into one endless "image feed", but loading images only as
 they're close to be scrolled into view.
+
+Similar widget/behavior is usually called "image carousel" in web development.
 
 ``--auto-scroll`` option allows slideshow-like behavior, but otherwise one can
 scroll through these manually.
@@ -78,9 +80,7 @@ opacity of the images, which can be controlled with ``-o/--opacity`` option inst
 For example, to have half-transparent dark-greenish background in the window
 (should only be poking-out with ``--spacing`` or non-solid ``--opacity`` settings)::
 
-  #infinite-image-scroller {
-    background: rgba(16,28,16,0.5);
-  }
+  #infinite-image-scroller { background: rgba(16,28,16,0.5); }
 
 There isn't much to tweak inside this window in general - just images.
 
