@@ -28,6 +28,8 @@ get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
 class ScrollerConf:
 
+	app_id = 'net.fraggod.infinite-image-scroller'
+	no_session = False
 	win_w = win_h = None
 	win_x = win_y = None
 	win_default_size = 700, 500
@@ -213,12 +215,14 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 class ScrollerApp(Gtk.Application):
 
-	def __init__(self, *win_args, **win_kws):
-		self.win_opts = win_args, win_kws
+	def __init__(self, src_paths_iter, conf):
+		self.src_paths_iter, self.conf = src_paths_iter, conf
 		super(ScrollerApp, self).__init__()
+		if self.conf.app_id: self.set_application_id(self.conf.app_id)
+		if self.conf.no_session: self.set_property('register-session', False)
 
 	def do_activate(self):
-		win = ScrollerWindow(self, *self.win_opts[0], **self.win_opts[1])
+		win = ScrollerWindow(self, self.src_paths_iter, self.conf)
 		win.connect('delete-event', lambda w,*data: self.quit())
 		win.show_all()
 
@@ -299,6 +303,10 @@ def main(args=None):
 			.format(', '.join(conf.wm_type_hints_all)))
 
 	group = parser.add_argument_group('Misc / debug')
+	parser.add_argument('-n', '--no-register-session', action='store_true',
+		help='Do not try register app with any session manager.'
+			' Can be used to get rid of Gtk-WARNING messages'
+				' about these and to avoid using dbus, but not sure how/if it actually works.')
 	parser.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
@@ -343,6 +351,7 @@ def main(args=None):
 			conf.wm_type_hints |= conf.wm_type_hints_all[k]
 	conf.vbox_spacing = opts.spacing
 	conf.opacity = opts.opacity
+	conf.no_session = opts.no_register_session
 
 	log.debug('Starting application...')
 	ScrollerApp(src_paths_iter, conf).run()
