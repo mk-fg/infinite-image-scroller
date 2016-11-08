@@ -37,6 +37,7 @@ class ScrollerConf:
 	win_default_size = 700, 500
 	win_w = win_h = None
 	win_x = win_y = None
+
 	wm_hints = None
 	wm_hints_all = (
 		' focus_on_map modal resizable hide_titlebar_when_maximized'
@@ -54,6 +55,9 @@ class ScrollerConf:
 	image_opacity = 1.0
 	auto_scroll = None
 
+	# Format is '[mod1 ...] key', with modifier keys alpha-sorted, see _window_key() func
+	quit_keys = 'q', 'control q', 'control w', 'escape'
+
 	def __init__(self, **kws):
 		for k, v in kws.items():
 			if not hasattr(self, k): raise AttributeError(k)
@@ -64,8 +68,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def __init__(self, app, src_paths_iter, conf):
 		super(ScrollerWindow, self).__init__(name='infinite-image-scroller', application=app)
-		self.src_paths_iter, self.conf = src_paths_iter, conf
-		self.box_images = deque()
+		self.app, self.src_paths_iter, self.conf = app, src_paths_iter, conf
 		self.log = get_logger('win')
 
 		self.set_title(self.conf.win_title)
@@ -103,6 +106,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.add(self.scroll)
 		self.box = Gtk.VBox(spacing=self.conf.vbox_spacing, expand=True)
 		self.scroll.add_with_viewport(self.box)
+		self.box_images = deque()
 
 		self.scroll_ev = None
 		self.scroll.get_vadjustment().connect('value-changed', self._scroll_ev)
@@ -135,6 +139,9 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			ft.partial(self._place_window, ev_done='configure-event') )
 		self._place_window(self)
 
+		self.connect('key-press-event', self._window_key)
+
+
 	def init_content(self):
 		for n in range(self.conf.queue_size): self._show_next_image()
 		if self.conf.auto_scroll:
@@ -165,6 +172,24 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			get_pos = lambda v,sv,wv: int(v[1]) if v[0] != '-' else (sv - wv + int(v[1]))
 			if self.conf.win_x: w.move(get_pos(self.conf.win_x, sw, ww), wy)
 			if self.conf.win_y: w.move(wx, get_pos(self.conf.win_y, sh, wh))
+
+	def _window_key(self, w, ev, _masks=dict()):
+		if not _masks:
+			for st, mod in Gdk.ModifierType.__flags_values__.items():
+				if ( len(mod.value_names) != 1
+					or not mod.first_value_nick.endswith('-mask') ): continue
+				assert st not in _masks, [mod.first_value_nick, _masks[st]]
+				mod = mod.first_value_nick[:-5]
+				if mod.startswith('modifier-reserved-'): mod = 'res-{}'.format(mod[18:])
+				_masks[st] = mod
+		chk, keyval = ev.get_keyval()
+		if not chk: return
+		key_sum, key_name = list(), Gdk.keyval_name(keyval)
+		for st, mod in _masks.items():
+			if ev.state & st == st: key_sum.append(mod)
+		key_sum = ' '.join(sorted(key_sum) + [key_name]).lower()
+		self.log.debug('key-press-event: {!r}', key_sum)
+		if key_sum in self.conf.quit_keys: self.app.quit()
 
 
 	def _scroll_ev(self, adj):
@@ -270,6 +295,12 @@ def main(args=None):
 			' Can be a fifo or pipe, use "-" to read it from stdin.')
 
 	group = parser.add_argument_group('Scrolling')
+	group.add_argument('-q', '--queue',
+		metavar='count[:preload-thresh]',
+		help='Number of images scrolling through a window and at which position'
+				' (0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.'
+			' Format is: count[:preload-theshold]. Examples: 4:0.8, 10:0.5, 5:0.9.'
+			' Default: {}:{}'.format(conf.queue_size, conf.queue_preload_at))
 	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]',
 		help='Auto-scroll by specified number of pixels with specified interval (1s by defaul).')
 
@@ -291,12 +322,6 @@ def main(args=None):
 	group.add_argument('-s', '--spacing',
 		type=int, metavar='px', default=conf.vbox_spacing,
 		help='Padding between images, in pixels. Default: %(default)spx.')
-	group.add_argument('-q', '--queue',
-		metavar='count[:preload-thresh]',
-		help='Number of images scrolling through a window and at which position'
-				' (0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.'
-			' Format is: count[:preload-theshold]. Examples: 4:0.8, 10:0.5, 5:0.9.'
-			' Default: {}:{}'.format(conf.queue_size, conf.queue_preload_at))
 	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)',
 		help=( 'Comma or space-separated list of WM hints to set/unset for the window.'
 				' All of these can have boolean yes/no or unspecified/default values.'
@@ -324,6 +349,7 @@ def main(args=None):
 			' Can be used to get rid of Gtk-WARNING messages'
 				' about these and to avoid using dbus, but not sure how/if it actually works.')
 	parser.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
+
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	global log

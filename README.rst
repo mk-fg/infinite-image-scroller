@@ -53,8 +53,8 @@ Transparency options should only work with compositing WM though.
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 
 
-Appearance / key bindings
-`````````````````````````
+Appearance
+``````````
 
 `Gtk3 CSS <https://developer.gnome.org/gtk3/stable/chap-css-overview.html>`_
 (e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window somewhat
@@ -75,8 +75,32 @@ fly and such, use `Gtk-Inspector <https://wiki.gnome.org/Projects/GTK%2B/Inspect
 Default css just makes backgrounds in all of these transparent, which doesn't affect
 opacity of the images, which can be controlled with ``-o/--opacity`` option instead.
 
-For example, to add Vi keybindings for scrolling only in this window, following
-can be added to ``~/.config/gtk-3.0/gtk.css``::
+For example, to have half-transparent dark-greenish background in the window
+(should only be poking-out with ``--spacing`` or non-solid ``--opacity`` settings)::
+
+  #infinite-image-scroller {
+    background: rgba(16,28,16,0.5);
+  }
+
+There isn't much to tweak inside this window in general - just images.
+
+See ``--wm-hints``, ``--wm-type-hints``, ``--icon-name`` and similar options for
+stuff related to WM-side decorations like title bar, borders, icon, etc.
+
+
+Key bindings
+````````````
+
+Default keybindings are:
+
+- Arrow keys, Page Up/Down, WSAD - scroll.
+- Esc, q, ctrl+q, ctrl+w - quit.
+
+Key/mouse bindings can be added/changed via Gtk3 CSS, same as per "Appearance"
+section above - look there for details.
+
+Example - add Vi keybindings for scrolling in this window (append this to
+e.g. ``~/.config/gtk-3.0/gtk.css``)::
 
   @binding-set image-scroller-keys {
     bind "k" { "scroll-child" (step-up, 0) };
@@ -87,13 +111,6 @@ can be added to ``~/.config/gtk-3.0/gtk.css``::
 
   #infinite-image-scroller scrolledwindow {
     -gtk-key-bindings: image-scroller-keys;
-  }
-
-Or, to have half-transparent dark-greenish background in the window (should only
-be poking-out with ``--spacing`` or non-solid ``--opacity`` settings)::
-
-  #infinite-image-scroller {
-    background: rgba(16,28,16,0.5);
   }
 
 
