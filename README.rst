@@ -39,10 +39,14 @@ newline-separated list-file or stdin::
 "step" and how often it is repeated (default is 1 second, if omitted), i.e.
 ``-a 10:0.1`` means "scroll by 10px every 0.1 seconds".
 
-More fancy display options - scrolling transparent 800px sidebar on the right::
+More fancy display options - scrolling transparent 800px
+sticky/undecorated/unfocusable/bottom-layer sidebar
+(like `conky <https://en.wikipedia.org/wiki/Conky_(software)>`_)
+on the right::
 
-  % ./infinite-image-scroller.py --pos=800xS-0 \
-      --spacing=10 --opacity=0.7 --queue=8:0.8 -a 10:0.2 -- /mnt/images/
+  % ./infinite-image-scroller.py --pos=800xS-0 --spacing=10 --opacity=0.7 \
+      --wm-hints='stick keep_below skip_taskbar skip_pager -accept_focus -decorated' \
+      --wm-type-hints=utility --queue=8:0.8 --auto-scroll=10:0.2 -- /mnt/images/
 
 Transparency options should only work with compositing WM though.
 
@@ -99,8 +103,6 @@ TODO
 
 - Option for a horizontal scrolling instead of vertical, maybe 2d grid,
   reverse direction.
-
-- Options for window type, border and misc other WM hints.
 
 - Random/shuffle/loop options.
 

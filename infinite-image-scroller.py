@@ -37,6 +37,16 @@ class ScrollerConf:
 	auto_scroll = None
 	opacity = 1.0
 	scroll_event_delay = 0.2
+	wm_hints = None
+	wm_hints_all = (
+		' focus_on_map modal resizable hide_titlebar_when_maximized'
+		' stick maximize fullscreen keep_above keep_below decorated'
+		' deletable skip_taskbar skip_pager urgency accept_focus'
+		' auto_startup_notification mnemonics_visible focus_visible' ).split()
+	wm_type_hints = Gdk.WindowTypeHint.NORMAL
+	wm_type_hints_all = dict(
+		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
+	# XXX: title, role, icon_name / default_icon_name
 
 	def __init__(self, **kws):
 		for k, v in kws.items():
@@ -84,6 +94,23 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 		self.scroll_ev = None
 		self.scroll.get_vadjustment().connect('value-changed', self._scroll_ev)
+
+		hints = dict.fromkeys(self.conf.wm_hints_all)
+		hints.update(self.conf.wm_hints or dict())
+		for k in list(hints):
+			setter = getattr(self, 'set_{}'.format(k), None)
+			if not setter: setter = getattr(self, 'set_{}_hint'.format(k), None)
+			if not setter: setter = getattr(self, k, None)
+			if not setter: continue
+			v = hints.pop(k)
+			if v is None: continue
+			self.log.debug('Setting WM hint: {} = {}', k, v)
+			if not setter.get_arguments(): # e.g. w.fullscreen()
+				if v: setter()
+				continue
+			setter(v)
+		assert not hints, ['Unrecognized wm-hints:', hints]
+		self.set_type_hint(self.conf.wm_type_hints)
 
 		self.connect('composited-changed', self._set_visual)
 		self.connect('screen-changed', self._set_visual)
@@ -255,6 +282,21 @@ def main(args=None):
 				' (0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.'
 			' Format is: count[:preload-theshold]. Examples: 4:0.8, 10:0.5, 5:0.9.'
 			' Default: {}:{}'.format(conf.queue_size, conf.queue_preload_at))
+	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)',
+		help=( 'Comma or space-separated list of WM hints to set/unset for the window.'
+				' All of these can have boolean yes/no or unspecified/default values.'
+				' Specifying hint name in the list will have it explicity set (i.e. "yes/true" value),'
+					' and preceding name with "-" will have it explicitly unset instead ("no/false").'
+				' List of recognized hints: [ {} ].'
+				' Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.' )\
+			.format(', '.join(conf.wm_hints_all)))
+	group.add_argument('-t', '--wm-type-hints', metavar='hint(,...)',
+		help=( 'Comma or space-separated list of window type hints for WM.'
+				' Similar to --wm-hints in general, but are'
+					' combined separately to set window type hint value.'
+				' List of recognized type-hints: [ {} ], all are unset by default.'
+				' Probably does not make sense to use multiple of these at once.' )\
+			.format(', '.join(conf.wm_type_hints_all)))
 
 	group = parser.add_argument_group('Misc / debug')
 	parser.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
@@ -292,6 +334,13 @@ def main(args=None):
 		except ValueError: qs, q_pos = opts.queue, None
 		if qs: conf.queue_size = int(qs)
 		if q_pos: conf.queue_preload_at = float(q_pos)
+	if opts.wm_hints:
+		conf.wm_hints = dict(
+			(hint.lstrip('+-'), not hint.startswith('-'))
+			for hint in opts.wm_hints.replace(',', ' ').split() )
+	if opts.wm_type_hints:
+		for k in opts.wm_type_hints.replace(',', ' ').split():
+			conf.wm_type_hints |= conf.wm_type_hints_all[k]
 	conf.vbox_spacing = opts.spacing
 	conf.opacity = opts.opacity
 
