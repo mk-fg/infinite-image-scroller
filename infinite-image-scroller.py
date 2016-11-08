@@ -30,6 +30,7 @@ class ScrollerConf:
 
 	win_w = win_h = None
 	win_x = win_y = None
+	win_default_size = 700, 500
 	vbox_spacing = 3
 	queue_size = 3
 	queue_preload_at = 0.7
@@ -75,10 +76,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			Gdk.Screen.get_default(), css,
 			Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION )
 
-		self.connect('composited-changed', self._set_visual)
-		self.connect('screen-changed', self._set_visual)
-		self._set_visual(self)
-
 		self.scroll = Gtk.ScrolledWindow()
 		self.scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.ALWAYS)
 		self.add(self.scroll)
@@ -88,10 +85,16 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.scroll_ev = None
 		self.scroll.get_vadjustment().connect('value-changed', self._scroll_ev)
 
+		self.connect('composited-changed', self._set_visual)
+		self.connect('screen-changed', self._set_visual)
+		self._set_visual(self)
+
 		self.ev_discard = set()
+		self.set_default_size(*self.conf.win_default_size)
 		self.connect('show', self._place_window, 'show')
 		self.connect( 'configure-event',
 			ft.partial(self._place_window, ev_done='configure-event') )
+		self._place_window(self)
 
 	def init_content(self):
 		for n in range(self.conf.queue_size): self._show_next_image()
@@ -175,8 +178,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		alloc = self.box.get_allocation()
 		if image.w_chk == alloc.width: return
 		image.w_chk = alloc.width
-		# log.debug('Resizing image')
-		# image.set_allocation(alloc)
 		aspect = pixbuf.get_width() / pixbuf.get_height()
 		w, h = alloc.width, int(alloc.width / aspect)
 		pixbuf_resized = pixbuf.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
