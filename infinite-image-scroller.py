@@ -57,9 +57,20 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def init_widgets(self):
 		css = Gtk.CssProvider()
-		css.load_from_data('\n'.join([
-			'#infinite-image-scroller,',
-			'#infinite-image-scroller * { background: transparent; }' ]).encode())
+		css.load_from_data('''
+				@binding-set image-scroller-keys {
+					bind "Up" { "scroll-child" (step-up, 0) };
+					bind "Down" { "scroll-child" (step-down, 0) };
+					bind "Left" { "scroll-child" (step-left, 1) };
+					bind "Right" { "scroll-child" (step-right, 1) };
+					bind "w" { "scroll-child" (step-up, 0) };
+					bind "s" { "scroll-child" (step-down, 0) };
+					bind "a" { "scroll-child" (step-left, 1) };
+					bind "d" { "scroll-child" (step-right, 1) }; }
+				#infinite-image-scroller scrolledwindow { -gtk-key-bindings: image-scroller-keys; }
+				#infinite-image-scroller,
+				#infinite-image-scroller * { background: transparent; }
+			'''.encode())
 		Gtk.StyleContext.add_provider_for_screen(
 			Gdk.Screen.get_default(), css,
 			Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION )

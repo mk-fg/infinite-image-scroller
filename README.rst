@@ -104,6 +104,6 @@ TODO
 
 - Random/shuffle/loop options.
 
-- More hotkeys (incl. arrows for scrolling), right-click menu controls maybe.
+- Some popup menu (e.g. on right-click) for options maybe.
 
 - Load stuff when scrolling in either direction, not just one.
