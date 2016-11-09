@@ -54,6 +54,7 @@ class ScrollerConf:
 	queue_preload_at = 0.7
 	image_opacity = 1.0
 	auto_scroll = None
+	image_open_attempts = 3
 
 	# Format is '[mod1 ...] key', with modifier keys alpha-sorted, see _window_key() func
 	quit_keys = 'q', 'control q', 'control w', 'escape'
@@ -213,10 +214,16 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 
 	def _show_next_image(self):
-		p = next(self.src_paths_iter)
-		if not p: return 0
 
-		image = self._add_image(p)
+		for n in range(self.conf.image_open_attempts):
+			p = next(self.src_paths_iter)
+			if not p: return 0
+			image = self._add_image(p)
+			if image: break
+		else:
+			self.log.error( 'Failed to get new image'
+				' in {} attempt(s), giving up', self.conf.image_open_attempts )
+			return 0
 		self.box.add(image)
 		self.box_images.append(image)
 		image.show()
@@ -231,7 +238,11 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def _add_image(self, path):
 		self.log.debug('Adding image: {}', path)
-		pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+		try: pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+		except Exception as err:
+			self.log.error( 'Failed to create gdk-pixbuf'
+				' from file: [{}] {}', err.__class__.__name__, err )
+			return
 		image = Gtk.Image()
 		image.w_chk = None
 		if self.conf.image_opacity < 1.0:
