@@ -141,10 +141,11 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self._place_window(self)
 
 		self.connect('key-press-event', self._window_key)
+		self.connect('check_resize', self._update_images)
 
 
 	def init_content(self):
-		for n in range(self.conf.queue_size): self._show_next_image()
+		for n in range(self.conf.queue_size): self._image_add()
 		if self.conf.auto_scroll:
 			px, s = self.conf.auto_scroll
 			adj = self.scroll.get_vadjustment()
@@ -208,35 +209,35 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			pos = pos + offset
 			adj.set_value(pos)
 		if pos >= pos_max * self.conf.queue_preload_at:
-			h_offset = self._show_next_image() + self.conf.vbox_spacing
+			h_offset = self._image_cycle()
 			adj.set_value(pos - h_offset)
 		return repeat
 
-
-	def _show_next_image(self):
-
-		for n in range(self.conf.image_open_attempts):
-			p = next(self.src_paths_iter)
-			if not p: return 0
-			image = self._add_image(p)
-			if image: break
-		else:
-			self.log.error( 'Failed to get new image'
-				' in {} attempt(s), giving up', self.conf.image_open_attempts )
-			return 0
-		self.box.add(image)
-		self.box_images.append(image)
-		image.show()
-
+	def _image_cycle(self):
+		self._image_add()
 		h_offset = 0
 		while len(self.box_images) > self.conf.queue_size:
 			image = self.box_images.popleft()
 			h_offset += image.get_allocation().height
 			image.destroy()
+		h_offset += self.conf.vbox_spacing
 		return h_offset
 
+	def _image_add(self):
+		for n in range(self.conf.image_open_attempts):
+			p = next(self.src_paths_iter)
+			if not p: return
+			image = self._image_load(p)
+			if image: break
+		else:
+			self.log.error( 'Failed to get new image'
+				' in {} attempt(s), giving up', self.conf.image_open_attempts )
+			return
+		self.box.add(image)
+		self.box_images.append(image)
+		image.show()
 
-	def _add_image(self, path):
+	def _image_load(self, path):
 		self.log.debug('Adding image: {}', path)
 		try: pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
 		except Exception as err:
@@ -244,20 +245,19 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				' from file: [{}] {}', err.__class__.__name__, err )
 			return
 		image = Gtk.Image()
-		image.w_chk = None
-		if self.conf.image_opacity < 1.0:
-			image.set_opacity(self.conf.image_opacity)
-		self.connect('check_resize', self._update_image, pixbuf, image)
+		image.pixbuf_src, image.path, image.w_chk = pixbuf, path, None
+		if self.conf.image_opacity < 1.0: image.set_opacity(self.conf.image_opacity)
 		return image
 
-	def _update_image(self, w, pixbuf, image):
-		alloc = self.box.get_allocation()
-		if image.w_chk == alloc.width: return
-		image.w_chk = alloc.width
-		aspect = pixbuf.get_width() / pixbuf.get_height()
-		w, h = alloc.width, int(alloc.width / aspect)
-		pixbuf_resized = pixbuf.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
-		image.set_from_pixbuf(pixbuf_resized)
+	def _update_images(self, w):
+		for image in list(self.box_images):
+			alloc = self.box.get_allocation()
+			if image.w_chk == alloc.width: continue
+			image.w_chk = alloc.width
+			aspect = image.pixbuf_src.get_width() / image.pixbuf_src.get_height()
+			w, h = alloc.width, int(alloc.width / aspect)
+			pixbuf_resized = image.pixbuf_src.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
+			image.set_from_pixbuf(pixbuf_resized)
 
 
 class ScrollerApp(Gtk.Application):
