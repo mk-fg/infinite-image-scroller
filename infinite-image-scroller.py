@@ -3,7 +3,7 @@
 import itertools as it, operator as op, functools as ft
 from collections import deque
 from pathlib import Path
-import os, sys, re, logging
+import os, sys, re, logging, textwrap
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -24,6 +24,8 @@ class LogStyleAdapter(logging.LoggerAdapter):
 		self.logger.log(level, LogMessage(msg, args, kws), **log_kws)
 
 get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
+
+dedent = lambda text: textwrap.dedent(text).strip('\n') + '\n'
 
 
 class ScrollerConf:
@@ -47,6 +49,21 @@ class ScrollerConf:
 	wm_type_hints = Gdk.WindowTypeHint.NORMAL
 	wm_type_hints_all = dict(
 		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
+
+	win_css = dedent('''
+		@binding-set image-scroller-keys {
+			bind "Up" { "scroll-child" (step-up, 0) };
+			bind "Down" { "scroll-child" (step-down, 0) };
+			bind "Left" { "scroll-child" (step-left, 1) };
+			bind "Right" { "scroll-child" (step-right, 1) };
+			bind "w" { "scroll-child" (step-up, 0) };
+			bind "s" { "scroll-child" (step-down, 0) };
+			bind "a" { "scroll-child" (step-left, 1) };
+			bind "d" { "scroll-child" (step-right, 1) }; }
+		#infinite-image-scroller scrolledwindow { -gtk-key-bindings: image-scroller-keys; }
+		#infinite-image-scroller,
+		#infinite-image-scroller * { background: transparent; }
+	''')
 
 	vbox_spacing = 3
 	scroll_event_delay = 0.2
@@ -84,20 +101,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def init_widgets(self):
 		css = Gtk.CssProvider()
-		css.load_from_data('''
-				@binding-set image-scroller-keys {
-					bind "Up" { "scroll-child" (step-up, 0) };
-					bind "Down" { "scroll-child" (step-down, 0) };
-					bind "Left" { "scroll-child" (step-left, 1) };
-					bind "Right" { "scroll-child" (step-right, 1) };
-					bind "w" { "scroll-child" (step-up, 0) };
-					bind "s" { "scroll-child" (step-down, 0) };
-					bind "a" { "scroll-child" (step-left, 1) };
-					bind "d" { "scroll-child" (step-right, 1) }; }
-				#infinite-image-scroller scrolledwindow { -gtk-key-bindings: image-scroller-keys; }
-				#infinite-image-scroller,
-				#infinite-image-scroller * { background: transparent; }
-			'''.encode())
+		css.load_from_data(self.conf.win_css.encode())
 		Gtk.StyleContext.add_provider_for_screen(
 			Gdk.Screen.get_default(), css,
 			Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION )
@@ -359,6 +363,8 @@ def main(args=None, conf=None):
 		help='Do not try register app with any session manager.'
 			' Can be used to get rid of Gtk-WARNING messages'
 				' about these and to avoid using dbus, but not sure how/if it actually works.')
+	parser.add_argument('--dump-css', action='store_true',
+		help='Print css that is used for windows by default and exit.')
 	parser.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
@@ -370,6 +376,8 @@ def main(args=None, conf=None):
 		datefmt='%Y-%m-%d %H:%M:%S',
 		level=logging.DEBUG if opts.debug else logging.WARNING )
 	log = get_logger('main')
+
+	if opts.dump_css: return print(conf.win_css.replace('\t', '  '), end='')
 
 	src_paths = opts.image_path or list()
 	if opts.file_list:
