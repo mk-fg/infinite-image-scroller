@@ -359,13 +359,13 @@ def main(args=None, conf=None):
 			' Example: image-x-generic.')
 
 	group = parser.add_argument_group('Misc / debug')
-	parser.add_argument('-n', '--no-register-session', action='store_true',
+	group.add_argument('-n', '--no-register-session', action='store_true',
 		help='Do not try register app with any session manager.'
 			' Can be used to get rid of Gtk-WARNING messages'
 				' about these and to avoid using dbus, but not sure how/if it actually works.')
-	parser.add_argument('--dump-css', action='store_true',
+	group.add_argument('--dump-css', action='store_true',
 		help='Print css that is used for windows by default and exit.')
-	parser.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
+	group.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
