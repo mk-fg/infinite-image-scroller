@@ -16,12 +16,12 @@ class LogMessage:
 
 class LogStyleAdapter(logging.LoggerAdapter):
 	def __init__(self, logger, extra=None):
-		super(LogStyleAdapter, self).__init__(logger, extra or {})
+		super().__init__(logger, extra or {})
 	def log(self, level, msg, *args, **kws):
 		if not self.isEnabledFor(level): return
 		log_kws = {} if 'exc_info' not in kws else dict(exc_info=kws.pop('exc_info'))
 		msg, kws = self.process(msg, kws)
-		self.logger._log(level, LogMessage(msg, args, kws), (), log_kws)
+		self.logger.log(level, LogMessage(msg, args, kws), **log_kws)
 
 get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
@@ -68,7 +68,7 @@ class ScrollerConf:
 class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def __init__(self, app, src_paths_iter, conf):
-		super(ScrollerWindow, self).__init__(name='infinite-image-scroller', application=app)
+		super().__init__(name='infinite-image-scroller', application=app)
 		self.app, self.src_paths_iter, self.conf = app, src_paths_iter, conf
 		self.log = get_logger('win')
 
@@ -264,7 +264,7 @@ class ScrollerApp(Gtk.Application):
 
 	def __init__(self, src_paths_iter, conf):
 		self.src_paths_iter, self.conf = src_paths_iter, conf
-		super(ScrollerApp, self).__init__()
+		super().__init__()
 		if self.conf.app_id: self.set_application_id(self.conf.app_id)
 		if self.conf.no_session: self.set_property('register-session', False)
 
@@ -287,8 +287,8 @@ def file_iter(src_paths):
 		else: yield str(path)
 	while True: yield
 
-def main(args=None):
-	conf = ScrollerConf()
+def main(args=None, conf=None):
+	if not conf: conf = ScrollerConf()
 
 	import argparse
 	parser = argparse.ArgumentParser(
