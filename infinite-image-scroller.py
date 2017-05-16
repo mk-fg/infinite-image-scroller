@@ -172,12 +172,15 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			get_val = lambda v,sv: int(v) if v != 'S' else sv
 			ww, wh = get_val(self.conf.win_w, sw), get_val(self.conf.win_h, sh)
 			w.resize(ww, wh)
+			self.log.debug('win-resize: {} {}', ww, wh)
 		if self.conf.win_x or self.conf.win_y:
 			if not (ww or wh): ww, wh = w.get_size()
 			wx, wy = w.get_position()
-			get_pos = lambda v,sv,wv: int(v[1]) if v[0] != '-' else (sv - wv + int(v[1]))
-			if self.conf.win_x: w.move(get_pos(self.conf.win_x, sw, ww), wy)
-			if self.conf.win_y: w.move(wx, get_pos(self.conf.win_y, sh, wh))
+			get_pos = lambda v,sv,wv: int(v[1:]) if v[0] != '-' else (sv - wv - int(v[1:]))
+			if self.conf.win_x: wx = get_pos(self.conf.win_x, sw, ww)
+			if self.conf.win_y: wy = get_pos(self.conf.win_y, sh, wh)
+			self.log.debug('win-move: {} {}', wx, wy)
+			w.move(wx, wy)
 
 	def _window_key(self, w, ev, _masks=dict()):
 		if not _masks:
