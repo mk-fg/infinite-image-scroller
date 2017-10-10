@@ -126,3 +126,5 @@ TODO
 - Some popup menu (e.g. on right-click) for options maybe.
 
 - Load stuff when scrolling in either direction, not just one.
+
+- More keybindings - scroll to next image, linger on one image, pause.
