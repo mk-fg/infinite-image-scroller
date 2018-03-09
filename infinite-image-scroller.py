@@ -3,7 +3,7 @@
 import itertools as it, operator as op, functools as ft
 from collections import deque
 from pathlib import Path
-import os, sys, re, logging, textwrap
+import os, sys, re, logging, textwrap, random
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -243,7 +243,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def _image_add(self):
 		for n in range(self.conf.image_open_attempts):
-			p = next(self.src_paths_iter)
+			try: p = next(self.src_paths_iter)
+			except StopIteration: p = None
 			if not p: return
 			image = self._image_load(p)
 			if image: break
@@ -292,8 +293,22 @@ class ScrollerApp(Gtk.Application):
 		win.show_all()
 
 
+def shuffle_iter(src_paths, crop_ratio=0.25):
+	src_paths, used = list(src_paths), 0
+	while len(src_paths) > used:
+		n = random.randint(0, len(src_paths)-1)
+		p = src_paths[n]
+		if not p: continue
+		src_paths[n], used = None, used + 1
+		if used >= len(src_paths) * crop_ratio:
+			used, src_paths = 0, list(filter(None, src_paths))
+		yield p
+
+def loop_iter(src_paths_func):
+	while True:
+		for p in src_paths_func(): yield p
+
 def file_iter(src_paths):
-	'Infinite iter for image paths.'
 	for path in map(Path, src_paths):
 		if not path.exists():
 			log.warn('Path does not exists: {}', path)
@@ -303,7 +318,7 @@ def file_iter(src_paths):
 				root = Path(root)
 				for fn in files: yield str(root / fn)
 		else: yield str(path)
-	while True: yield
+
 
 def main(args=None, conf=None):
 	if not conf: conf = ScrollerConf()
@@ -322,6 +337,12 @@ def main(args=None, conf=None):
 	group.add_argument('-f', '--file-list', metavar='path',
 		help='File with a list of image files/dirs paths to use, separated by newlines.'
 			' Can be a fifo or pipe, use "-" to read it from stdin.')
+	group.add_argument('-r', '--shuffle', action='store_true',
+		help='Read full list of input images (dont use infinite --file-list) and shuffle it.')
+	group.add_argument('-l', '--loop', action='store_true',
+		help='Loop (pre-buffered) input list of images infinitely.'
+			' Will re-read any dirs in image_path on each loop cycle,'
+				' and reshuffle files if -r/--shuffle is also specified.')
 
 	group = parser.add_argument_group('Scrolling')
 	group.add_argument('-q', '--queue',
@@ -404,7 +425,14 @@ def main(args=None, conf=None):
 		src_file = Path(opts.file_list).open() if opts.file_list != '-' else sys.stdin
 		src_paths = iter(lambda: src_file.readline().rstrip('\r\n').strip('\0'), '')
 	elif not src_paths: src_paths.append('.')
-	src_paths_iter = file_iter(src_paths)
+
+	if opts.shuffle: random.seed()
+	if opts.loop:
+		src_func = lambda s=list(src_paths): file_iter(s)
+		if opts.shuffle: src_func = lambda f=src_func: shuffle_iter(f())
+		src_paths_iter = loop_iter(src_func)
+	elif opts.shuffle: src_paths_iter = shuffle_iter(file_iter(src_paths))
+	else: src_paths_iter = file_iter(src_paths)
 
 	if opts.auto_scroll:
 		try: px, s = map(float, opts.auto_scroll.split(':', 1))

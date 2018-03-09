@@ -28,8 +28,8 @@ Usage
 
 Simple usage example::
 
-  % ./infinite-image-scroller.py path/to/my-image-dir
   % ./infinite-image-scroller.py image1.jpg image2.jpg image3.jpg
+  % ./infinite-image-scroller.py --loop --shuffle path/to/my-image-dir
 
 Can also read a list or an endless feed of paths (files/dirs) from a
 newline-separated list-file or stdin::
@@ -57,6 +57,7 @@ Or borderless window on whole second monitor::
 (transparency options should only work with compositing WM though)
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
+
 
 
 Appearance
@@ -92,6 +93,7 @@ See ``--wm-hints``, ``--wm-type-hints``, ``--icon-name`` and similar options for
 stuff related to WM-side decorations like title bar, borders, icon, etc.
 
 
+
 Key bindings
 ````````````
 
@@ -124,8 +126,6 @@ TODO
 
 - Option for a horizontal scrolling instead of vertical, maybe 2d grid,
   reverse direction.
-
-- Random/shuffle/loop options.
 
 - Some popup menu (e.g. on right-click) for options maybe.
 
