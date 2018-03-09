@@ -50,7 +50,11 @@ on the right::
       --wm-hints='stick keep_below skip_taskbar skip_pager -accept_focus -decorated' \
       --wm-type-hints=utility --queue=8:0.8 --auto-scroll=10:0.2 -- /mnt/images/
 
-Transparency options should only work with compositing WM though.
+Or borderless window on whole second monitor::
+
+  % ./infinite-image-scroller.py -p M2 -x=-decorated -a 10:0.05 /mnt/images/
+
+(transparency options should only work with compositing WM though)
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 

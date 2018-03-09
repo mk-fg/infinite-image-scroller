@@ -27,6 +27,11 @@ get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
 dedent = lambda text: textwrap.dedent(text).strip('\n') + '\n'
 
+class adict(dict):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.__dict__ = self
+
 
 class ScrollerConf:
 
@@ -165,20 +170,26 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if ev_done:
 			if ev_done in self.ev_discard: return
 			self.ev_discard.add(ev_done)
-		s = w.get_screen()
-		sw, sh = s.width(), s.height()
+		s, sg = w.get_screen(), adict(x=0, y=0, w=0, h=0)
+		geom = dict(S=sg)
+		for n in range(s.get_n_monitors()):
+			rct = s.get_monitor_geometry(n)
+			mg = geom[f'M{n+1}'] = adict(x=rct.x, y=rct.y, w=rct.width, h=rct.height)
+			sg.w, sg.h = max(sg.w, mg.x + mg.w), max(sg.h, mg.y + mg.h)
 		ww = wh = None
 		if self.conf.win_w and self.conf.win_h:
-			get_val = lambda v,sv: int(v) if v != 'S' else sv
-			ww, wh = get_val(self.conf.win_w, sw), get_val(self.conf.win_h, sh)
+			get_val = lambda v,k: int(v) if v.isdigit() else geom[v][k]
+			ww, wh = get_val(self.conf.win_w, 'w'), get_val(self.conf.win_h, 'h')
 			w.resize(ww, wh)
 			self.log.debug('win-resize: {} {}', ww, wh)
 		if self.conf.win_x or self.conf.win_y:
 			if not (ww or wh): ww, wh = w.get_size()
 			wx, wy = w.get_position()
-			get_pos = lambda v,sv,wv: int(v[1:]) if v[0] != '-' else (sv - wv - int(v[1:]))
-			if self.conf.win_x: wx = get_pos(self.conf.win_x, sw, ww)
-			if self.conf.win_y: wy = get_pos(self.conf.win_y, sh, wh)
+			get_pos = lambda v,k,wv: (
+				(int(v[1:]) if v[0] != '-' else (sg[k] - wv - int(v[1:])))
+				if v[0] in '+-' else geom[v][k] )
+			if self.conf.win_x: wx = get_pos(self.conf.win_x, 'x', ww)
+			if self.conf.win_y: wy = get_pos(self.conf.win_y, 'y', wh)
 			self.log.debug('win-move: {} {}', wx, wy)
 			w.move(wx, wy)
 
@@ -331,12 +342,17 @@ def main(args=None, conf=None):
 			' Default: %(default)s.')
 	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)',
 		help='Set window size and/or position hints for WM (usually followed).'
-			' W/H values can be special "S" to use screen size, e.g. SxS is "fullscreen".'
+			' W/H values can be special "S" to use screen size,'
+				' e.g. "SxS" (or just "S") is "fullscreen".'
 			' X/Y offsets must be specified in that order, if at all, with positive'
 				' values (prefixed with "+") meaning offset from top-left corner'
 				' of the screen, and negative - bottom-right.'
+			' Special values like "M1" (or M2, M3, etc) can'
+				' be used to specify e.g. monitor-1 width/heigth/offsets,'
+				' and if size is just "M1" or "M2", then x/y offsets default to that monitor too.'
 			' If not specified (default), all are left for Window Manager to decide/remember.'
-			' Examples: 800x600, -0+0 (move to top-right corner), 200xS+0.')
+			' Examples: 800x600, -0+0 (move to top-right corner),'
+				' S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.')
 	group.add_argument('-s', '--spacing',
 		type=int, metavar='px', default=conf.vbox_spacing,
 		help='Padding between images, in pixels. Default: %(default)spx.')
@@ -395,12 +411,18 @@ def main(args=None, conf=None):
 		except ValueError: px, s = float(opts.auto_scroll), 1
 		conf.auto_scroll = px, s
 	if opts.pos:
-		m = re.search(r'^((?:\d+|S)x(?:\d+|S))?([-+]\d+)?([-+]\d+)?$', opts.pos)
+		m = re.search(
+			r'^((?:M?\d+|S)(?:x(?:M?\d+|S))?)?'
+			r'([-+]M?\d+)?([-+]M?\d+)?$', opts.pos )
 		if not m: parser.error('Invalid size/position spec: {!r}', opts.pos)
 		size, x, y = m.groups()
-		if size: conf.win_w, conf.win_h = size.split('x', 1)
+		size_fs = size if 'x' not in size else None
+		if size:
+			if size_fs: size = f'{size}x{size}'
+			conf.win_w, conf.win_h = size.split('x', 1)
 		if x: conf.win_x = x
 		if y: conf.win_y = y
+		if size_fs and not (x or y): conf.win_x = conf.win_y = size_fs
 	if opts.queue:
 		try: qs, q_pos = opts.queue.split(':', 1)
 		except ValueError: qs, q_pos = opts.queue, None
