@@ -324,85 +324,116 @@ def main(args=None, conf=None):
 	if not conf: conf = ScrollerConf()
 
 	import argparse
+
+	class SmartHelpFormatter(argparse.HelpFormatter):
+		def __init__(self, *args, **kws):
+			return super().__init__(*args, **kws, width=100)
+		def _fill_text(self, text, width, indent):
+			if '\n' not in text: return super()._fill_text(text, width, indent)
+			return ''.join(indent + line for line in text.splitlines(keepends=True))
+		def _split_lines(self, text, width):
+			return super()._split_lines(text, width)\
+				if '\n' not in text else dedent(text).replace('\t', '  ').splitlines()
+
 	parser = argparse.ArgumentParser(
+		formatter_class=SmartHelpFormatter,
 		description='Display image-scroller window.')
 
 	group = parser.add_argument_group('Image sources')
 	group.add_argument('image_path', nargs='*',
-		help='Path to file(s) or directories (will be searched recursively) to display images from.'
-			' All found files will be treated as images,'
-				' use e.g. find/grep/xargs for filename-based filtering.'
-			' If no paths are provided, current'
-				' directory is used by default. See also --file-list option.')
+		help='''
+			Path to file(s) or directories
+				(will be searched recursively) to display images from.
+			All found files will be treated as images,
+				use e.g. find/grep/xargs for filename-based filtering.
+			If no paths are provided, current
+				directory is used by default. See also --file-list option.''')
 	group.add_argument('-f', '--file-list', metavar='path',
-		help='File with a list of image files/dirs paths to use, separated by newlines.'
-			' Can be a fifo or pipe, use "-" to read it from stdin.')
+		help='''
+			File with a list of image files/dirs paths to use, separated by newlines.
+			Can be a fifo or pipe, use "-" to read it from stdin.''')
 	group.add_argument('-r', '--shuffle', action='store_true',
-		help='Read full list of input images (dont use infinite --file-list) and shuffle it.')
+		help='''
+			Read full list of input images
+				(dont use infinite --file-list) and shuffle it.''')
 	group.add_argument('-l', '--loop', action='store_true',
-		help='Loop (pre-buffered) input list of images infinitely.'
-			' Will re-read any dirs in image_path on each loop cycle,'
-				' and reshuffle files if -r/--shuffle is also specified.')
+		help='''
+			Loop (pre-buffered) input list of images infinitely.
+			Will re-read any dirs in image_path on each loop cycle,
+				and reshuffle files if -r/--shuffle is also specified.''')
 
 	group = parser.add_argument_group('Scrolling')
 	group.add_argument('-q', '--queue',
 		metavar='count[:preload-thresh]',
-		help='Number of images scrolling through a window and at which position'
-				' (0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.'
-			' Format is: count[:preload-theshold]. Examples: 4:0.8, 10:0.5, 5:0.9.'
-			' Default: {}:{}'.format(conf.queue_size, conf.queue_preload_at))
+		help=f'''
+			Number of images scrolling through a window and at which position'
+				(0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.
+			Format is: count[:preload-theshold].
+			Examples: 4:0.8, 10:0.5, 5:0.9. Default: {conf.queue_size}:{conf.queue_preload_at}''')
 	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]',
-		help='Auto-scroll by specified number of pixels with specified interval (1s by defaul).')
+		help='''
+			Auto-scroll by specified number
+				of pixels with specified interval (1s by defaul).''')
 
 	group = parser.add_argument_group('Appearance')
 	group.add_argument('-o', '--opacity',
 		type=float, metavar='0-1.0', default=1.0,
-		help='Opacity of the window contents - float value in 0-1.0'
-				' range, with 0 being fully-transparent and 1.0 fully opaque.'
-			' Should only have any effect with compositing Window Manager.'
-			' Default: %(default)s.')
+		help='''
+			Opacity of the window contents - float value in 0-1.0
+				range, with 0 being fully-transparent and 1.0 fully opaque.
+			Should only have any effect with compositing Window Manager.
+			Default: %(default)s.''')
 	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)',
-		help='Set window size and/or position hints for WM (usually followed).'
-			' W/H values can be special "S" to use screen size,'
-				' e.g. "SxS" (or just "S") is "fullscreen".'
-			' X/Y offsets must be specified in that order, if at all, with positive'
-				' values (prefixed with "+") meaning offset from top-left corner'
-				' of the screen, and negative - bottom-right.'
-			' Special values like "M1" (or M2, M3, etc) can'
-				' be used to specify e.g. monitor-1 width/heigth/offsets,'
-				' and if size is just "M1" or "M2", then x/y offsets default to that monitor too.'
-			' If not specified (default), all are left for Window Manager to decide/remember.'
-			' Examples: 800x600, -0+0 (move to top-right corner),'
-				' S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.')
+		help='''
+			Set window size and/or position hints for WM (usually followed).
+			W/H values can be special "S" to use screen size,
+				e.g. "SxS" (or just "S") is "fullscreen".
+			X/Y offsets must be specified in that order, if at all, with positive
+				values (prefixed with "+") meaning offset from top-left corner
+				of the screen, and negative - bottom-right.
+			Special values like "M1" (or M2, M3, etc) can
+				be used to specify e.g. monitor-1 width/heigth/offsets,
+				and if size is just "M1" or "M2", then x/y offsets default to that monitor too.
+			If not specified (default), all are left for Window Manager to decide/remember.
+			Examples: 800x600, -0+0 (move to top-right corner),
+				S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.
+			"slop" tool - https://github.com/naelstrof/slop - can be used
+				used to get this value interactively via mouse selection (e.g. "-p $(slop)").''')
 	group.add_argument('-s', '--spacing',
 		type=int, metavar='px', default=conf.vbox_spacing,
 		help='Padding between images, in pixels. Default: %(default)spx.')
 	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)',
-		help=( 'Comma or space-separated list of WM hints to set/unset for the window.'
-				' All of these can have boolean yes/no or unspecified/default values.'
-				' Specifying hint name in the list will have it explicity set (i.e. "yes/true" value),'
-					' and preceding name with "-" will have it explicitly unset instead ("no/false").'
-				' List of recognized hints: [ {} ].'
-				' Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.' )\
-			.format(', '.join(conf.wm_hints_all)))
+		help='''
+			Comma or space-separated list of WM hints to set/unset for the window.
+			All of these can have boolean yes/no or unspecified/default values.
+			Specifying hint name in the list will have it explicity set (i.e. "yes/true" value),
+				and preceding name with "-" will have it explicitly unset instead ("no/false").
+			List of recognized hints:
+				{}.
+			Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.'''\
+			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf.wm_hints_all), 75))))
 	group.add_argument('-t', '--wm-type-hints', metavar='hint(,...)',
-		help=( 'Comma or space-separated list of window type hints for WM.'
-				' Similar to --wm-hints in general, but are'
-					' combined separately to set window type hint value.'
-				' List of recognized type-hints: [ {} ], all are unset by default.'
-				' Probably does not make sense to use multiple of these at once.' )\
-			.format(', '.join(conf.wm_type_hints_all)))
+		help='''
+			Comma or space-separated list of window type hints for WM.
+			Similar to --wm-hints in general, but are
+				combined separately to set window type hint value.
+			List of recognized type-hints (all unset by default):
+				{}.
+			Probably does not make sense to use multiple of these at once.'''\
+			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf.wm_type_hints_all), 75))))
 	group.add_argument('-i', '--icon-name', metavar='icon',
-		help='Name of the XDG icon to use for the window.'
-			' Can be icon from a theme, one of the default gtk ones, and such.'
-			' See XDG standards for how this name gets resolved into actual file path.'
-			' Example: image-x-generic.')
+		help='''
+			Name of the XDG icon to use for the window.
+			Can be icon from a theme, one of the default gtk ones, and such.
+			See XDG standards for how this name gets resolved into actual file path.
+			Example: image-x-generic.''')
 
 	group = parser.add_argument_group('Misc / debug')
 	group.add_argument('-n', '--no-register-session', action='store_true',
-		help='Do not try register app with any session manager.'
-			' Can be used to get rid of Gtk-WARNING messages'
-				' about these and to avoid using dbus, but not sure how/if it actually works.')
+		help='''
+			Do not try register app with any session manager.
+			Can be used to get rid of Gtk-WARNING messages
+				about these and to avoid using dbus, but not sure how/if it actually works.''')
 	group.add_argument('--dump-css', action='store_true',
 		help='Print css that is used for windows by default and exit.')
 	group.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
