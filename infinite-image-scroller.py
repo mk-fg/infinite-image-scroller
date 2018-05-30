@@ -473,7 +473,7 @@ def main(args=None, conf=None):
 		m = re.search(
 			r'^((?:M?\d+|S)(?:x(?:M?\d+|S))?)?'
 			r'([-+]M?\d+)?([-+]M?\d+)?$', opts.pos )
-		if not m: parser.error('Invalid size/position spec: {!r}', opts.pos)
+		if not m: parser.error(f'Invalid size/position spec: {opts.pos!r}')
 		size, x, y = m.groups()
 		size_fs = size if 'x' not in size else None
 		if size:
