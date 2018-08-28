@@ -115,7 +115,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.ALWAYS)
 		self.add(self.scroll)
 		self.box = Gtk.VBox(spacing=self.conf.vbox_spacing, expand=True)
-		self.scroll.add_with_viewport(self.box)
+		self.scroll.add(self.box)
 		self.box_images = deque()
 
 		self.scroll_ev = None
@@ -170,10 +170,10 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if ev_done:
 			if ev_done in self.ev_discard: return
 			self.ev_discard.add(ev_done)
-		s, sg = w.get_screen(), adict(x=0, y=0, w=0, h=0)
+		dsp, sg = w.get_screen().get_display(), adict(x=0, y=0, w=0, h=0)
 		geom = dict(S=sg)
-		for n in range(s.get_n_monitors()):
-			rct = s.get_monitor_geometry(n)
+		for n in range(dsp.get_n_monitors()):
+			rct = dsp.get_monitor(n).get_geometry()
 			mg = geom[f'M{n+1}'] = adict(x=rct.x, y=rct.y, w=rct.width, h=rct.height)
 			sg.w, sg.h = max(sg.w, mg.x + mg.w), max(sg.h, mg.y + mg.h)
 		ww = wh = None
@@ -379,8 +379,8 @@ def main(args=None, conf=None):
 	group.add_argument('-o', '--opacity',
 		type=float, metavar='0-1.0', default=1.0,
 		help='''
-			Opacity of the window contents - float value in 0-1.0
-				range, with 0 being fully-transparent and 1.0 fully opaque.
+			Opacity of the window contents - float value in 0-1.0 range,
+				with 0 being fully-transparent and 1.0 fully opaque.
 			Should only have any effect with compositing Window Manager.
 			Default: %(default)s.''')
 	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)',
