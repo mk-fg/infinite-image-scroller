@@ -144,7 +144,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 		self.ev_discard = set()
 		self.set_default_size(*self.conf.win_default_size)
-		self.connect('show', self._place_window, 'show')
 		self.connect( 'configure-event',
 			ft.partial(self._place_window, ev_done='configure-event') )
 		self._place_window(self)
