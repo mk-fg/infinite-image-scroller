@@ -124,8 +124,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		hints = dict.fromkeys(self.conf.wm_hints_all)
 		hints.update(self.conf.wm_hints or dict())
 		for k in list(hints):
-			setter = getattr(self, 'set_{}'.format(k), None)
-			if not setter: setter = getattr(self, 'set_{}_hint'.format(k), None)
+			setter = getattr(self, f'set_{k}', None)
+			if not setter: setter = getattr(self, f'set_{k}_hint', None)
 			if not setter: setter = getattr(self, k, None)
 			if not setter: continue
 			v = hints.pop(k)
@@ -283,7 +283,7 @@ class ScrollerApp(Gtk.Application):
 	def __init__(self, src_paths_iter, conf):
 		self.src_paths_iter, self.conf = src_paths_iter, conf
 		super().__init__()
-		if self.conf.app_id: self.set_application_id(self.conf.app_id)
+		if self.conf.app_id: self.set_application_id(self.conf.app_id.format(pid=os.getpid()))
 		if self.conf.no_session: self.set_property('register-session', False)
 
 	def do_activate(self):
@@ -433,6 +433,9 @@ def main(args=None, conf=None):
 			Do not try register app with any session manager.
 			Can be used to get rid of Gtk-WARNING messages
 				about these and to avoid using dbus, but not sure how/if it actually works.''')
+	group.add_argument('-u', '--unique', action='store_true',
+		help='Force application uniqueness via GTK application_id.'
+			' I.e. exit immediately if another app instance is already running.')
 	group.add_argument('--dump-css', action='store_true',
 		help='Print css that is used for windows by default and exit.')
 	group.add_argument('-d', '--debug', action='store_true', help='Verbose operation mode.')
@@ -497,6 +500,7 @@ def main(args=None, conf=None):
 	conf.vbox_spacing = opts.spacing
 	conf.image_opacity = opts.opacity
 	conf.no_session = opts.no_register_session
+	if not opts.unique: conf.app_id += '.pid-{pid}'
 
 	log.debug('Starting application...')
 	ScrollerApp(src_paths_iter, conf).run()
