@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 
 import itertools as it, operator as op, functools as ft
-from collections import deque
-from pathlib import Path
+import pathlib as pl, collections as cs
 import os, sys, re, logging, textwrap, random
 
 import gi
 gi.require_version('Gtk', '3.0')
+gi.require_version('Gdk', '3.0')
+gi.require_version('GLib', '2.0')
+gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
 
@@ -74,8 +76,11 @@ class ScrollerConf:
 	scroll_event_delay = 0.2
 	queue_size = 3
 	queue_preload_at = 0.7
-	image_opacity = 1.0
 	auto_scroll = None
+	image_opacity = 1.0
+	image_brightness = None
+	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
+	image_scale_algo_str_list = 'bilinear hyper nearest tiles'.split()
 	image_open_attempts = 3
 
 	# Format is '[mod1 ...] key', with modifier keys alpha-sorted, see _window_key() func
@@ -100,6 +105,10 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			self.log.debug('Using icon: {}', self.conf.win_icon)
 			self.set_icon_name(self.conf.win_icon)
 
+		if self.conf.image_brightness:
+			import pixbuf_proc
+			self.pp = pixbuf_proc
+
 		self.init_widgets()
 		self.init_content()
 
@@ -116,7 +125,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.add(self.scroll)
 		self.box = Gtk.VBox(spacing=self.conf.vbox_spacing, expand=True)
 		self.scroll.add(self.box)
-		self.box_images = deque()
+		self.box_images = cs.deque()
 
 		self.scroll_ev = None
 		self.scroll.get_vadjustment().connect('value-changed', self._scroll_ev)
@@ -272,10 +281,27 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			alloc = self.box.get_allocation()
 			if image.w_chk == alloc.width: continue
 			image.w_chk = alloc.width
-			aspect = image.pixbuf_src.get_width() / image.pixbuf_src.get_height()
-			w, h = alloc.width, int(alloc.width / aspect)
-			pixbuf_resized = image.pixbuf_src.scale_simple(w, h, GdkPixbuf.InterpType.BILINEAR)
-			image.set_from_pixbuf(pixbuf_resized)
+			wx, hx = image.pixbuf_src.get_width(), image.pixbuf_src.get_height()
+			w, h = alloc.width, int(alloc.width / (wx / hx))
+
+			# Applies pixel-level transformations to smaller image, for efficiency
+			scale_early = not self.conf.image_brightness or wx * hx < w * h
+			pixbuf = image.pixbuf_src
+			if scale_early: pixbuf = pixbuf.scale_simple(w, h, self.conf.image_scale_algo)
+			if self.conf.image_brightness:
+				csp = pixbuf.get_property('colorspace')
+				if csp != GdkPixbuf.Colorspace.RGB:
+					log.warning( 'Skipping image processing'
+						' - unsupported colorspace [{}]: {}', csp.value_nick, image.path )
+				else:
+					buff = pixbuf.get_pixels()
+					self.pp.brightness_set(buff, self.conf.image_brightness)
+					pixbuf = GdkPixbuf.Pixbuf.new_from_data(
+						buff, GdkPixbuf.Colorspace.RGB, False, 8,
+						pixbuf.get_width(), pixbuf.get_height(), pixbuf.get_rowstride() )
+				if not scale_early: pixbuf = pixbuf.scale_simple(w, h, self.conf.image_scale_algo)
+
+			image.set_from_pixbuf(pixbuf)
 
 
 class ScrollerApp(Gtk.Application):
@@ -308,13 +334,13 @@ def loop_iter(src_paths_func):
 		for p in src_paths_func(): yield p
 
 def file_iter(src_paths):
-	for path in map(Path, src_paths):
+	for path in map(pl.Path, src_paths):
 		if not path.exists():
 			log.warn('Path does not exists: {}', path)
 			continue
 		if path.is_dir():
 			for root, dirs, files in os.walk(str(path)):
-				root = Path(root)
+				root = pl.Path(root)
 				for fn in files: yield str(root / fn)
 		else: yield str(path)
 
@@ -360,6 +386,20 @@ def main(args=None, conf=None):
 			Loop (pre-buffered) input list of images infinitely.
 			Will re-read any dirs in image_path on each loop cycle,
 				and reshuffle files if -r/--shuffle is also specified.''')
+
+	group = parser.add_argument_group('Image processing')
+	algos = conf.image_scale_algo_str_list
+	group.add_argument('-z', '--scaling-interp',
+		default=algos[0], metavar='algo', help=f'''
+			Interpolation algorithm to use to scale images to window size.
+			Supported ones: {", ".join(algos)}. Default: %(default)s.
+			Can be specified by full name, prefix (e.g. "h" for "hyper") or digit (1={algos[0]}).''')
+	group.add_argument('-b', '--brightness', type=float, metavar='float',
+		help='''
+			Adjust brightness of images before displaying them via HSP algorithm,
+				multiplying P by specified coefficient value (>1 - brighter, <1 - darker).
+			For more info on HSP, see http://alienryderflex.com/hsp.html
+			Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.''')
 
 	group = parser.add_argument_group('Scrolling')
 	group.add_argument('-q', '--queue',
@@ -450,12 +490,29 @@ def main(args=None, conf=None):
 		level=logging.DEBUG if opts.debug else logging.WARNING )
 	log = get_logger('main')
 
+	if opts.brightness:
+		if opts.brightness == 1.0: opts.brightness = None
+		elif opts.brightness < 0: parser.error('-b/--brightness value must be >0')
+	if opts.scaling_interp:
+		algo = opts.scaling_interp.strip().lower()
+		if algo not in conf.image_scale_algo_str_list:
+			if algo.isdigit():
+				try: algo = conf.image_scale_algo_str_list[int(algo) - 1]
+				except: algo = None
+			else:
+				for a in conf.image_scale_algo_str_list:
+					if not a.startswith(algo): continue
+					algo = a
+					break
+				else: algo = None
+			if not algo: parser.error(f'Unknown scaling interpolation value: {opts.scaling_interp}')
+			opts.scaling_interp = algo
 	if opts.dump_css: return print(conf.win_css.replace('\t', '  '), end='')
 
 	src_paths = opts.image_path or list()
 	if opts.file_list:
 		if src_paths: parser.error('Either --file-list or image_path args can be specified, not both.')
-		src_file = Path(opts.file_list).open() if opts.file_list != '-' else sys.stdin
+		src_file = pl.Path(opts.file_list).open() if opts.file_list != '-' else sys.stdin
 		src_paths = iter(lambda: src_file.readline().rstrip('\r\n').strip('\0'), '')
 	elif not src_paths: src_paths.append('.')
 
@@ -499,6 +556,8 @@ def main(args=None, conf=None):
 	if opts.icon_name: conf.win_icon = opts.icon_name
 	conf.vbox_spacing = opts.spacing
 	conf.image_opacity = opts.opacity
+	conf.image_brightness = opts.brightness
+	conf.image_scale_algo = getattr(GdkPixbuf.InterpType, opts.scaling_interp.upper())
 	conf.no_session = opts.no_register_session
 	if not opts.unique: conf.app_id += '.pid-{pid}'
 

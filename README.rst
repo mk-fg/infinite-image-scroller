@@ -59,7 +59,6 @@ Or borderless window on whole second monitor::
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 
 
-
 Appearance
 ``````````
 
@@ -93,7 +92,6 @@ See ``--wm-hints``, ``--wm-type-hints``, ``--icon-name`` and similar options for
 stuff related to WM-side decorations like title bar, borders, icon, etc.
 
 
-
 Key bindings
 ````````````
 
@@ -118,6 +116,20 @@ e.g. ``~/.config/gtk-3.0/gtk.css``)::
   #infinite-image-scroller scrolledwindow {
     -gtk-key-bindings: image-scroller-keys;
   }
+
+
+Image processing
+````````````````
+
+When using -b/--brightness option to apply pixel-level processing to images,
+helper pixbuf_proc.so C-API module has to be compiled::
+
+  gcc -O2 -fpic --shared $(python3-config --includes) pixbuf_proc.c -o pixbuf_proc.so
+
+Can be left in the same dir as the main script or PYTHONPATH anywhere.
+
+Not using PIL/pillow module because simple R/G/B multiplication it uses for this
+stuff is suboptimal.
 
 
 
