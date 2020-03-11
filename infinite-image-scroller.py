@@ -80,7 +80,6 @@ class ScrollerConf:
 	image_opacity = 1.0
 	image_brightness = None
 	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
-	image_scale_algo_str_list = 'bilinear hyper nearest tiles'.split()
 	image_open_attempts = 3
 
 	# Format is '[mod1 ...] key', with modifier keys alpha-sorted, see _window_key() func
@@ -347,6 +346,7 @@ def file_iter(src_paths):
 
 def main(args=None, conf=None):
 	if not conf: conf = ScrollerConf()
+	scale_algos = 'bilinear hyper nearest tiles'.split()
 
 	import argparse
 
@@ -357,8 +357,8 @@ def main(args=None, conf=None):
 			if '\n' not in text: return super()._fill_text(text, width, indent)
 			return ''.join(indent + line for line in text.splitlines(keepends=True))
 		def _split_lines(self, text, width):
-			return super()._split_lines(text, width)\
-				if '\n' not in text else dedent(text).replace('\t', '  ').splitlines()
+			return ( super()._split_lines(text, width) if '\n' not in text
+				else dedent(re.sub(r'(?<=\S)\t+', ' ', text)).replace('\t', '  ').splitlines() )
 
 	parser = argparse.ArgumentParser(
 		formatter_class=SmartHelpFormatter,
@@ -388,12 +388,12 @@ def main(args=None, conf=None):
 				and reshuffle files if -r/--shuffle is also specified.''')
 
 	group = parser.add_argument_group('Image processing')
-	algos = conf.image_scale_algo_str_list
 	group.add_argument('-z', '--scaling-interp',
-		default=algos[0], metavar='algo', help=f'''
+		default=scale_algos[0], metavar='algo', help=f'''
 			Interpolation algorithm to use to scale images to window size.
-			Supported ones: {", ".join(algos)}. Default: %(default)s.
-			Can be specified by full name, prefix (e.g. "h" for "hyper") or digit (1={algos[0]}).''')
+			Supported ones: {", ".join(scale_algos)}. Default: %(default)s.
+			Can be specified by full name, prefix\
+				(e.g. "h" for "hyper") or digit (1={scale_algos[0]}).''')
 	group.add_argument('-b', '--brightness', type=float, metavar='float',
 		help='''
 			Adjust brightness of images before displaying them via HSP algorithm,
@@ -405,7 +405,7 @@ def main(args=None, conf=None):
 	group.add_argument('-q', '--queue',
 		metavar='count[:preload-thresh]',
 		help=f'''
-			Number of images scrolling through a window and at which position'
+			Number of images scrolling through a window and at which position
 				(0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.
 			Format is: count[:preload-theshold].
 			Examples: 4:0.8, 10:0.5, 5:0.9. Default: {conf.queue_size}:{conf.queue_preload_at}''')
@@ -495,12 +495,12 @@ def main(args=None, conf=None):
 		elif opts.brightness < 0: parser.error('-b/--brightness value must be >0')
 	if opts.scaling_interp:
 		algo = opts.scaling_interp.strip().lower()
-		if algo not in conf.image_scale_algo_str_list:
+		if algo not in scale_algos:
 			if algo.isdigit():
-				try: algo = conf.image_scale_algo_str_list[int(algo) - 1]
+				try: algo = scale_algos[int(algo) - 1]
 				except: algo = None
 			else:
-				for a in conf.image_scale_algo_str_list:
+				for a in scale_algos:
 					if not a.startswith(algo): continue
 					algo = a
 					break
