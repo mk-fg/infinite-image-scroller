@@ -12,6 +12,9 @@
 #define __STDC_WANT_LIB_EXT2__ 1
 #include <stdio.h>
 
+#include "gdk-pixbuf/gdk-pixbuf.h"
+
+#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 
 
@@ -85,25 +88,9 @@ void HSPtoRGB(
 
 static PyObject *pp_error;
 
-static PyObject *
-pp_brightness_set(PyObject *self, PyObject *args) {
-	Py_buffer img; double k;
-	if (!PyArg_ParseTuple(args, "y*d", &img, &k)) return NULL;
-	PyObject *res = NULL;
-
-	if (k < 0) {
-		char *err; int i = asprintf( &err,
-			"Brightness coefficient cannot be negative: %f", k );
-		PyErr_SetString(PyExc_ValueError, err);
-		goto end; }
-	if (!PyBuffer_IsContiguous(&img, 'C')) { // not sure if it ever happens
-		PyErr_SetString( pp_error,
-			"BUG - cannot process bytes object, as it's not contiguous in memory" );
-		goto end; }
-
+void pp_brightness(unsigned char *buff, unsigned int buff_len, double k) {
 	double r, g, b, h, s, p;
-	unsigned char *buff = img.buf;
-	unsigned char *end = buff + img.len;
+	unsigned char *end = buff + buff_len;
 	while (buff < end) {
 		r = buff[0]; g = buff[1]; b = buff[2];
 		RGBtoHSP(r, g, b, &h, &s, &p);
@@ -111,10 +98,49 @@ pp_brightness_set(PyObject *self, PyObject *args) {
 		HSPtoRGB(h, s, p, &r, &g, &b);
 		buff[0] = r; buff[1] = g; buff[2] = b;
 		buff += 3; }
-	res = Py_None;
+}
+
+static PyObject *
+pp_process_image_file(PyObject *self, PyObject *args) {
+	char *path; int w; int h; double brightness_k;
+	if (!PyArg_ParseTuple( args,
+		"siid", &path, &w, &h, &brightness_k )) return NULL;
+
+	char *err; int err_n;
+
+	GError *gerr = NULL;
+	GdkPixbuf *pb = NULL;
+
+	PyObject *res = NULL;
+	int pb_w, pb_h, pb_rs;
+	unsigned char *buff = NULL; unsigned int buff_len;
+
+	if (brightness_k < 0) {
+		err_n = asprintf(&err, "Brightness cannot be negative: %f", brightness_k);
+		PyErr_SetString(PyExc_ValueError, err);
+		goto end; }
+
+	Py_BEGIN_ALLOW_THREADS // -- no python stuff beyond this point
+
+	pb = gdk_pixbuf_new_from_file_at_size(path, w, h, &gerr);
+	if (!pb) goto end;
+	pb_w = gdk_pixbuf_get_width(pb);
+	pb_h = gdk_pixbuf_get_height(pb);
+	pb_rs = gdk_pixbuf_get_rowstride(pb);
+	// XXX: check/set pb colorspace here?
+	buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
+	if (brightness_k != 1.0) pp_brightness(buff, buff_len, brightness_k);
 
 	end:
-	PyBuffer_Release(&img);
+	Py_END_ALLOW_THREADS // -- python stuff allowed again
+
+	if (buff) res = Py_BuildValue("(y#iii)", buff, buff_len, pb_w, pb_h, pb_rs);
+	if (gerr) {
+		err_n = asprintf(&err, "GdkPixbuf image load error - %s", gerr->message);
+		PyErr_SetString(pp_error, err);
+		g_error_free(gerr); }
+	if (pb) g_object_unref(pb);
+
 	return res;
 }
 
@@ -122,16 +148,15 @@ pp_brightness_set(PyObject *self, PyObject *args) {
 // Python C-API boilerplate
 
 static PyMethodDef pp_methods[] = {
-	{"brightness_set", pp_brightness_set, METH_VARARGS,
-		"(buffer, k) Loop over specified image-pixel-buffer,"
-			" applying HSP brightness adjustment to each pixel in there."},
+	{"process_image_file", pp_process_image_file, METH_VARARGS,
+		"(path, max_w, max_h, brightness_k) Load image and scale/process it."},
 	{NULL, NULL, 0, NULL}
 };
 
 static struct PyModuleDef pp_module = {
 	PyModuleDef_HEAD_INIT,
 	"pixbuf_proc",
-	"Fast processing for Gdk.pixbuf.get_pixels() buffers.",
+	"Background GdkPixbuf image loading and processing.",
 	-1,
 	pp_methods
 };

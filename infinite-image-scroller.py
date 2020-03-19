@@ -73,10 +73,11 @@ class ScrollerConf:
 	''')
 
 	vbox_spacing = 3
-	scroll_event_delay = 0.2
+	event_delay = 0.2 # debounce delay for scrolling and window resizing
 	queue_size = 3
 	queue_preload_at = 0.7
 	auto_scroll = None
+	image_proc_module = False
 	image_opacity = 1.0
 	image_brightness = None
 	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
@@ -103,10 +104,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if self.conf.win_icon:
 			self.log.debug('Using icon: {}', self.conf.win_icon)
 			self.set_icon_name(self.conf.win_icon)
-
-		if self.conf.image_brightness:
-			import pixbuf_proc
-			self.pp = pixbuf_proc
+		self.pp = self.conf.image_proc_module
 
 		self.init_widgets()
 		self.init_content()
@@ -125,9 +123,10 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.box = Gtk.VBox(spacing=self.conf.vbox_spacing, expand=True)
 		self.scroll.add(self.box)
 		self.box_images = cs.deque()
+		self.ev_timers = dict()
 
-		self.scroll_ev = None
-		self.scroll.get_vadjustment().connect('value-changed', self._scroll_ev)
+		self.scroll.get_vadjustment().connect( 'value-changed',
+			ft.partial(self.ev_debounce, ev='scroll', cb=self.scroll_update) )
 
 		hints = dict.fromkeys(self.conf.wm_hints_all)
 		hints.update(self.conf.wm_hints or dict())
@@ -146,37 +145,50 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		assert not hints, ['Unrecognized wm-hints:', hints]
 		self.set_type_hint(self.conf.wm_type_hints)
 
-		self.connect('composited-changed', self._set_visual)
-		self.connect('screen-changed', self._set_visual)
-		self._set_visual(self)
+		self.connect('composited-changed', self.set_visual_rgba)
+		self.connect('screen-changed', self.set_visual_rgba)
+		self.set_visual_rgba(self)
 
-		self.ev_discard = set()
 		self.set_default_size(*self.conf.win_default_size)
+		self.place_window_ev = None
+		self.place_window(self)
+		self.place_window_ev = self.connect('configure-event', self.place_window)
+		self.connect('key-press-event', self.window_key)
+
 		self.connect( 'configure-event',
-			ft.partial(self._place_window, ev_done='configure-event') )
-		self._place_window(self)
-
-		self.connect('key-press-event', self._window_key)
-		self.connect('check_resize', self._update_images)
-
+			ft.partial(self.ev_debounce, ev='set-pixbufs', cb=self.image_set_pixbufs) )
 
 	def init_content(self):
-		for n in range(self.conf.queue_size): self._image_add()
+		for n in range(self.conf.queue_size): self.image_add()
 		if self.conf.auto_scroll:
 			px, s = self.conf.auto_scroll
 			adj = self.scroll.get_vadjustment()
 			GLib.timeout_add( s * 1000,
-				ft.partial(self._scroll_ev_adjust, adj, offset=px, repeat=True) )
+				ft.partial(self.scroll_update, adj, offset=px, repeat=True) )
 
 
-	def _set_visual(self, w, *ev_data):
+	def ev_debounce_is_set(self, ev): return ev in self.ev_timers
+	def ev_debounce_clear(self, ev):
+		timer = self.ev_timers.pop(ev, None)
+		if timer is not None: GLib.source_remove(timer)
+	def ev_debounce_cb(self, ev, cb, ev_args):
+		self.ev_timers.pop(ev, None)
+		cb(*ev_args)
+	def ev_debounce(self, *ev_args, ev=None, cb=None):
+		self.ev_debounce_clear(ev)
+		self.ev_timers[ev] = GLib.timeout_add(
+			self.conf.event_delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
+
+
+	def set_visual_rgba(self, w, *ev_data):
 		visual = w.get_screen().get_rgba_visual()
 		if visual: w.set_visual(visual)
 
-	def _place_window(self, w, *ev_data, ev_done=None):
-		if ev_done:
-			if ev_done in self.ev_discard: return
-			self.ev_discard.add(ev_done)
+	def place_window(self, w, *ev_data):
+		if self.place_window_ev:
+			self.disconnect(self.place_window_ev)
+			self.place_window_ev = None
+
 		dsp, sg = w.get_screen().get_display(), adict(x=0, y=0, w=0, h=0)
 		geom = dict(S=sg)
 		for n in range(dsp.get_n_monitors()):
@@ -200,7 +212,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			self.log.debug('win-move: {} {}', wx, wy)
 			w.move(wx, wy)
 
-	def _window_key(self, w, ev, _masks=dict()):
+	def window_key(self, w, ev, _masks=dict()):
 		if not _masks:
 			for st, mod in Gdk.ModifierType.__flags_values__.items():
 				if ( len(mod.value_names) != 1
@@ -219,41 +231,37 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if key_sum in self.conf.quit_keys: self.app.quit()
 
 
-	def _scroll_ev(self, adj):
-		if self.scroll_ev:
-			GLib.source_remove(self.scroll_ev)
-			self.scroll_ev = None
-		self.scroll_ev = GLib.timeout_add(
-			self.conf.scroll_event_delay * 1000, self._scroll_ev_adjust, adj )
-
-	def _scroll_ev_adjust(self, adj, offset=None, repeat=False):
-		self.scroll_ev = None
+	def scroll_update(self, adj, offset=None, repeat=False):
+		self.ev_debounce_clear('scroll')
 		pos = adj.get_value()
 		pos_max = self.box.get_allocated_height() - self.get_size()[1]
 		if offset:
 			pos = pos + offset
 			adj.set_value(pos)
 		if pos >= pos_max * self.conf.queue_preload_at:
-			h_offset = self._image_cycle()
+			h_offset = self.image_cycle()
 			adj.set_value(pos - h_offset)
+		# Check is to avoid expensive updates/reloads while window is resized
+		if not self.ev_debounce_is_set('set-pixbufs'): self.image_set_pixbufs()
 		return repeat
 
-	def _image_cycle(self):
-		self._image_add()
+	def image_cycle(self):
+		while len(self.box_images) < self.conf.queue_size:
+			if not self.image_add(): break
 		h_offset = 0
 		while len(self.box_images) > self.conf.queue_size:
 			image = self.box_images.popleft()
 			h_offset += image.get_allocation().height
-			image.destroy()
+			self.image_remove(image)
 		h_offset += self.conf.vbox_spacing
 		return h_offset
 
-	def _image_add(self):
+	def image_add(self):
 		for n in range(self.conf.image_open_attempts):
 			try: p = next(self.src_paths_iter)
 			except StopIteration: p = None
 			if not p: return
-			image = self._image_load(p)
+			image = self.image_load(p)
 			if image: break
 		else:
 			self.log.error( 'Failed to get new image'
@@ -262,44 +270,48 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.box.add(image)
 		self.box_images.append(image)
 		image.show()
+		return True
 
-	def _image_load(self, path):
+	def image_remove(self, image):
+		self.box.remove(image)
+		image.destroy()
+
+	def image_load(self, path):
 		self.log.debug('Adding image: {}', path)
-		try: pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
-		except Exception as err:
-			self.log.error( 'Failed to create gdk-pixbuf'
-				' from file: [{}] {}', err.__class__.__name__, err )
-			return
+		if not self.pp:
+			try: pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+			except Exception as err:
+				self.log.error( 'Failed to create gdk-pixbuf'
+					' from file: [{}] {}', err.__class__.__name__, err )
+				return
+		else: pixbuf = None # loaded/resized by pixbuf_proc later
 		image = Gtk.Image()
 		image.pixbuf_src, image.path, image.w_chk = pixbuf, path, None
 		if self.conf.image_opacity < 1.0: image.set_opacity(self.conf.image_opacity)
 		return image
 
-	def _update_images(self, w):
+	def image_set_pixbufs(self, *ev_args):
+		'Must be called to set image widget contents to resized pixbufs'
+		self.ev_debounce_clear('set-pixbufs')
+		wa = self.get_allocation().width
 		for image in list(self.box_images):
-			alloc = self.box.get_allocation()
-			if image.w_chk == alloc.width: continue
-			image.w_chk = alloc.width
-			wx, hx = image.pixbuf_src.get_width(), image.pixbuf_src.get_height()
-			w, h = alloc.width, int(alloc.width / (wx / hx))
-
-			# Applies pixel-level transformations to smaller image, for efficiency
-			scale_early = not self.conf.image_brightness or wx * hx < w * h
-			pixbuf = image.pixbuf_src
-			if scale_early: pixbuf = pixbuf.scale_simple(w, h, self.conf.image_scale_algo)
-			if self.conf.image_brightness:
-				csp = pixbuf.get_property('colorspace')
-				if csp != GdkPixbuf.Colorspace.RGB:
-					log.warning( 'Skipping image processing'
-						' - unsupported colorspace [{}]: {}', csp.value_nick, image.path )
-				else:
-					buff = pixbuf.get_pixels()
-					self.pp.brightness_set(buff, self.conf.image_brightness)
-					pixbuf = GdkPixbuf.Pixbuf.new_from_data(
-						buff, GdkPixbuf.Colorspace.RGB, False, 8,
-						pixbuf.get_width(), pixbuf.get_height(), pixbuf.get_rowstride() )
-				if not scale_early: pixbuf = pixbuf.scale_simple(w, h, self.conf.image_scale_algo)
-
+			if image.w_chk == wa: continue
+			image.w_chk = wa
+			if image.pixbuf_src:
+				wx, hx = image.pixbuf_src.get_width(), image.pixbuf_src.get_height()
+				pixbuf = image.pixbuf_src.scale_simple(
+					wa, int(wa / (wx / hx)), self.conf.image_scale_algo )
+			else:
+				try:
+					buff, w, h, rs = self.pp.process_image_file(
+						image.path, wa, -1, self.conf.image_brightness or 1.0 )
+				except self.pp.error as err:
+					self.log.error('Failed to load/process image: {}', err)
+					self.box_images.remove(image)
+					self.image_remove(image)
+					continue
+				pixbuf = GdkPixbuf.Pixbuf.new_from_data(
+					buff, GdkPixbuf.Colorspace.RGB, False, 8, w, h, rs )
 			image.set_from_pixbuf(pixbuf)
 
 
@@ -388,6 +400,7 @@ def main(args=None, conf=None):
 				and reshuffle files if -r/--shuffle is also specified.''')
 
 	group = parser.add_argument_group('Image processing')
+	# XXX: drop this algo or check if pixbuf load+scale supports it somehow
 	group.add_argument('-z', '--scaling-interp',
 		default=scale_algos[0], metavar='algo', help=f'''
 			Interpolation algorithm to use to scale images to window size.
@@ -560,6 +573,14 @@ def main(args=None, conf=None):
 	conf.image_scale_algo = getattr(GdkPixbuf.InterpType, opts.scaling_interp.upper())
 	conf.no_session = opts.no_register_session
 	if not opts.unique: conf.app_id += '.pid-{pid}'
+
+	try:
+		import pixbuf_proc
+		conf.image_proc_module = pixbuf_proc
+	except ImportError:
+		if conf.image_brightness:
+			parser.error( 'pixbuf_proc.so module cannot be loaded, but is required'
+				' with these options - build it from pixbuf_proc.c in same repo as this script' )
 
 	log.debug('Starting application...')
 	ScrollerApp(src_paths_iter, conf).run()
