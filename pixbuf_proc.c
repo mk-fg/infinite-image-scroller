@@ -113,7 +113,7 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 	if (!PyArg_ParseTuple( args, "siiid",
 		&path, &w, &h, &scale_interp, &brightness_k )) return NULL;
 
-	char *err = NULL; int err_n;
+	char *err = NULL; int err_n = 0;
 
 	GError *gerr = NULL;
 	GdkPixbuf *pb = NULL, *pb_old = NULL;
@@ -166,9 +166,12 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 	end:
 	Py_END_ALLOW_THREADS // -- python stuff allowed again
 
-	if (buff) res = Py_BuildValue( "(y#iiib)",
-		buff, buff_len, pb_w, pb_h, pb_rs, pb_alpha );
-	if (err) PyErr_SetString(pp_error, err);
+	if (buff)
+		res = Py_BuildValue( "(y#iiib)",
+			buff, buff_len, pb_w, pb_h, pb_rs, pb_alpha );
+	if (err) {
+		PyErr_SetString(pp_error, err);
+		if (err_n) free(err); }
 	if (pb) g_object_unref(pb);
 
 	return res;
