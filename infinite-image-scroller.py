@@ -2,7 +2,7 @@
 
 import itertools as it, operator as op, functools as ft
 import pathlib as pl, collections as cs
-import os, sys, re, logging, textwrap, random
+import os, sys, re, logging, textwrap, random, signal
 
 import gi
 gi.require_version('Gtk', '3.0')
@@ -78,6 +78,7 @@ class ScrollerConf:
 	queue_preload_at = 0.7
 	auto_scroll = None
 	image_proc_module = False
+	image_proc_threads = None
 	image_opacity = 1.0
 	image_brightness = None
 	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
@@ -104,10 +105,22 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if self.conf.win_icon:
 			self.log.debug('Using icon: {}', self.conf.win_icon)
 			self.set_icon_name(self.conf.win_icon)
+
 		self.pp = self.conf.image_proc_module
+		if self.pp:
+			self.pp, threading, queue = self.pp
+			self.thread_queue = queue.Queue()
+			self.thread_list = list(
+				threading.Thread( name=f'set_pixbuf.{n}',
+					target=self.image_set_pixbuf_thread, daemon=True )
+				for n in range(self.conf.image_proc_threads) )
+			for t in self.thread_list: t.start()
+			self.thread_kill = threading.get_ident(), signal.SIGUSR1
+			GLib.unix_signal_add( GLib.PRIORITY_DEFAULT,
+				self.thread_kill[1], self.image_set_pixbuf_thread_cb )
+			self.thread_results = list()
 
 		self.init_widgets()
-		self.init_content()
 
 
 	def init_widgets(self):
@@ -122,7 +135,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.add(self.scroll)
 		self.box = Gtk.VBox(spacing=self.conf.vbox_spacing, expand=True)
 		self.scroll.add(self.box)
-		self.box_images = cs.deque()
+		self.box_images, self.box_images_init = cs.deque(), True
 		self.ev_timers = dict()
 
 		self.scroll.get_vadjustment().connect( 'value-changed',
@@ -158,8 +171,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.connect( 'configure-event',
 			ft.partial(self.ev_debounce, ev='set-pixbufs', cb=self.image_set_pixbufs) )
 
-	def init_content(self):
-		for n in range(self.conf.queue_size): self.image_add()
 		if self.conf.auto_scroll:
 			px, s = self.conf.auto_scroll
 			adj = self.scroll.get_vadjustment()
@@ -238,7 +249,9 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if offset:
 			pos = pos + offset
 			adj.set_value(pos)
-		if pos >= pos_max * self.conf.queue_preload_at:
+		if ( pos >= pos_max * self.conf.queue_preload_at
+				and self.box_images and (sum(bool(img.displayed)
+					for img in self.box_images) / len(self.box_images)) > self.conf.queue_preload_at ):
 			h_offset = self.image_cycle()
 			adj.set_value(pos - h_offset)
 		# Check is to avoid expensive updates/reloads while window is resized
@@ -246,6 +259,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		return repeat
 
 	def image_cycle(self):
+		self.image_add()
 		while len(self.box_images) < self.conf.queue_size:
 			if not self.image_add(): break
 		h_offset = 0
@@ -286,12 +300,18 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				return
 		else: pixbuf = None # loaded/resized by pixbuf_proc later
 		image = Gtk.Image()
-		image.pixbuf_src, image.path, image.w_chk = pixbuf, path, None
+		image.pixbuf_src, image.path = pixbuf, path
+		image.w_chk = image.displayed = None
 		if self.conf.image_opacity < 1.0: image.set_opacity(self.conf.image_opacity)
 		return image
 
-	def image_set_pixbufs(self, *ev_args):
+	def image_set_pixbufs(self, *ev_args, init=False):
 		'Must be called to set image widget contents to resized pixbufs'
+		if self.box_images_init:
+			self.box_images_init, init = False, True
+			init_height = self.get_allocation().height / self.conf.queue_preload_at
+			for n in range(self.conf.queue_size): self.image_add()
+
 		self.ev_debounce_clear('set-pixbufs')
 		wa = self.get_allocation().width
 		for image in list(self.box_images):
@@ -301,18 +321,54 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				wx, hx = image.pixbuf_src.get_width(), image.pixbuf_src.get_height()
 				pixbuf = image.pixbuf_src.scale_simple(
 					wa, int(wa / (wx / hx)), self.conf.image_scale_algo )
+				image.set_from_pixbuf(pixbuf)
+				image.displayed = True
 			else:
-				try:
-					buff, w, h, rs = self.pp.process_image_file( image.path, wa, -1,
-						int(self.conf.image_scale_algo), self.conf.image_brightness or 1.0 )
-				except self.pp.error as err:
-					self.log.error('Failed to load/process image: {}', err)
-					self.box_images.remove(image)
-					self.image_remove(image)
-					continue
-				pixbuf = GdkPixbuf.Pixbuf.new_from_data(
-					buff, GdkPixbuf.Colorspace.RGB, False, 8, w, h, rs )
-			image.set_from_pixbuf(pixbuf)
+				image.w, image.pixbuf_proc = wa, None
+				log.debug('pixbuf_proc [{}]: {}', 'init' if init else 'queue', image.path)
+				if init and init_height > 0:
+					self.image_set_pixbuf_proc(image)
+					if image.pixbuf_proc: init_height -= image.pixbuf_proc.get_width()
+					self.thread_results.append(image)
+				else: self.thread_queue.put_nowait(image)
+
+		if init and self.pp: self.image_set_pixbuf_thread_cb()
+
+	def image_set_pixbuf_proc(self, image):
+		wa = image.w
+		try:
+			buff, w, h, rs, alpha = self.pp.process_image_file(
+				image.path, wa, -1, int(self.conf.image_scale_algo), self.conf.image_brightness or 1.0 )
+		except self.pp.error as err:
+			self.log.error('Failed to load/process image: {}', err)
+			image.pixbuf_proc = False
+			return
+		if image.w != wa: return # was re-queued
+		image.pixbuf_proc = GdkPixbuf.Pixbuf\
+			.new_from_data(buff, GdkPixbuf.Colorspace.RGB, alpha, 8, w, h, rs)
+
+	def image_set_pixbuf_thread(self):
+		while True:
+			image = self.thread_queue.get()
+			log.debug('pixbuf_proc [thread]: {}', image.path)
+			self.image_set_pixbuf_proc(image)
+			self.thread_results.append(image)
+			signal.pthread_kill(*self.thread_kill)
+
+	def image_set_pixbuf_thread_cb(self):
+		# Note: these are only called in series by glib, and do not interrupt each other
+		while True:
+			try: image = self.thread_results.pop()
+			except IndexError: break
+			log.debug('pixbuf_proc [signal]: {}', image.path)
+			if image.pixbuf_proc is False:
+				self.box_images.remove(image)
+				self.image_remove(image)
+			else:
+				image.set_from_pixbuf(image.pixbuf_proc)
+				image.pixbuf_proc, image.displayed = None, True
+		return True
+
 
 
 class ScrollerApp(Gtk.Application):
@@ -412,6 +468,11 @@ def main(args=None, conf=None):
 				multiplying P by specified coefficient value (>1 - brighter, <1 - darker).
 			For more info on HSP, see http://alienryderflex.com/hsp.html
 			Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.''')
+	group.add_argument('-m', '--proc-threads', type=int, metavar='n',
+		help='''
+			Number of background threads to use for loading and processing images.
+			Only works with pixbuf_proc.so module loaded,
+				and defaults to CPU thread count, if it is loaded, and value not specified here.''')
 
 	group = parser.add_argument_group('Scrolling')
 	group.add_argument('-q', '--queue',
@@ -570,21 +631,23 @@ def main(args=None, conf=None):
 	conf.image_opacity = opts.opacity
 	conf.image_brightness = opts.brightness
 	conf.image_scale_algo = getattr(GdkPixbuf.InterpType, opts.scaling_interp.upper())
+	conf.image_proc_threads = opts.proc_threads
 	conf.no_session = opts.no_register_session
 	if not opts.unique: conf.app_id += '.pid-{pid}'
 
 	try:
-		import pixbuf_proc
-		conf.image_proc_module = pixbuf_proc
+		import pixbuf_proc, threading, queue
+		conf.image_proc_module = pixbuf_proc, threading, queue
 	except ImportError:
-		if conf.image_brightness:
+		if conf.image_brightness or conf.image_proc_threads:
 			parser.error( 'pixbuf_proc.so module cannot be loaded, but is required'
 				' with these options - build it from pixbuf_proc.c in same repo as this script' )
+	if not conf.image_proc_threads:
+		conf.image_proc_threads = os.cpu_count()
 
 	log.debug('Starting application...')
 	ScrollerApp(src_paths_iter, conf).run()
 
 if __name__ == '__main__':
-	import signal
 	signal.signal(signal.SIGINT, signal.SIG_DFL)
 	sys.exit(main())

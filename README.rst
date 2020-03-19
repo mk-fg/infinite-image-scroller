@@ -132,6 +132,19 @@ Not using PIL/pillow module because simple R/G/B multiplication it uses for this
 stuff is suboptimal.
 
 
+Optimization
+````````````
+
+When scrolling large images, synchronous loading (esp. from non-local
+filesystem) and resizing (for large images in particular) can cause stuttering.
+
+Bundled pixbuf_proc.so helper module tries to address that as well, by
+loading/scaling images in separate background non-GIL-locked threads, and will
+be auto-imported if it's available.
+
+See "Image processing" section above for how to build it.
+
+
 
 TODO
 ----

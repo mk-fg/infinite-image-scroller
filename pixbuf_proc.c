@@ -88,7 +88,8 @@ void HSPtoRGB(
 
 static PyObject *pp_error;
 
-void pp_brightness(unsigned char *buff, unsigned int buff_len, double k) {
+void pp_brightness( unsigned char *buff,
+		unsigned int buff_len, double k, int alpha ) {
 	if (k == 1.0) return;
 	double r, g, b, h, s, p;
 	unsigned char *end = buff + buff_len;
@@ -98,7 +99,7 @@ void pp_brightness(unsigned char *buff, unsigned int buff_len, double k) {
 		p *= k;
 		HSPtoRGB(h, s, p, &r, &g, &b);
 		buff[0] = r; buff[1] = g; buff[2] = b;
-		buff += 3; }
+		buff += alpha ? 4 : 3; }
 }
 
 static PyObject *
@@ -113,7 +114,7 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 	GdkPixbuf *pb = NULL, *pb_old = NULL;
 
 	PyObject *res = NULL;
-	int pb_w, pb_h, pb_rs;
+	int pb_w, pb_h, pb_rs, pb_alpha;
 	unsigned char *buff = NULL; unsigned int buff_len;
 
 	if (brightness_k < 0) {
@@ -134,6 +135,7 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 
 	pb_w = gdk_pixbuf_get_width(pb);
 	pb_h = gdk_pixbuf_get_height(pb);
+	pb_alpha = gdk_pixbuf_get_has_alpha(pb);
 	if (w < 0 && h < 0) { w = pb_w; h = pb_h; }
 	else if (w < 0) w = pb_w * (double) h / (double) pb_h;
 	else if (h < 0) h = pb_h * (double) w / (double) pb_w;
@@ -141,22 +143,26 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 
 	if (pb_rs) {
 		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
-		pp_brightness(buff, buff_len, brightness_k); }
+		pp_brightness(buff, buff_len, brightness_k, pb_alpha); }
 
 	if (pb_w != w || pb_h != h) {
 		pb_old = pb; pb_w = w; pb_h = h;
 		pb = gdk_pixbuf_scale_simple(pb_old, w, h, scale_interp);
 		g_object_unref(pb_old);
+		if (!pb) { err = "GdkPixbuf scaling error"; buff = NULL; goto end; }
 		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len); }
 
-	if (!pb_rs) pp_brightness(buff, buff_len, brightness_k);
+	if (!pb_rs) {
+		if (!buff) buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
+		pp_brightness(buff, buff_len, brightness_k, pb_alpha); }
 
 	pb_rs = gdk_pixbuf_get_rowstride(pb);
 
 	end:
 	Py_END_ALLOW_THREADS // -- python stuff allowed again
 
-	if (buff) res = Py_BuildValue("(y#iii)", buff, buff_len, pb_w, pb_h, pb_rs);
+	if (buff) res = Py_BuildValue( "(y#iiib)",
+		buff, buff_len, pb_w, pb_h, pb_rs, pb_alpha );
 	if (err) PyErr_SetString(pp_error, err);
 	if (pb) g_object_unref(pb);
 
