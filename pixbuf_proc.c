@@ -1,12 +1,17 @@
+//
 // Python C-API module to modify
 //  image buffer in-place for brightness and such adjustments.
 //
 // Build with:
-//  gcc -O2 -fpic --shared $(python3-config --includes) \
-//    pixbuf_proc.c -o pixbuf_proc.so
+//  gcc -O2 -fpic --shared `python3-config --includes` \
+//    `pkg-config --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
+//
 // Usage:
 //  import pixbuf_proc
-//  pixbuf_proc.brightness_set(buff, 1.5)
+//  buff, w, h, rs, alpha = pixbuf_proc\
+//    .process_image_file(path, max_w, max_h, scale_interp, brightness_k)
+//  pb = GdkPixbuf.Pixbuf.new_from_data(
+//    buff, GdkPixbuf.Colorspace.RGB, alpha, 8, w, h, rs )
 //
 
 #define __STDC_WANT_LIB_EXT2__ 1
@@ -104,7 +109,7 @@ void pp_brightness( unsigned char *buff,
 
 static PyObject *
 pp_process_image_file(PyObject *self, PyObject *args) {
-	char *path; int w; int h; int scale_interp; double brightness_k;
+	char *path; int w, h, scale_interp; double brightness_k;
 	if (!PyArg_ParseTuple( args, "siiid",
 		&path, &w, &h, &scale_interp, &brightness_k )) return NULL;
 
@@ -136,10 +141,10 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 	pb_w = gdk_pixbuf_get_width(pb);
 	pb_h = gdk_pixbuf_get_height(pb);
 	pb_alpha = gdk_pixbuf_get_has_alpha(pb);
-	if (w < 0 && h < 0) { w = pb_w; h = pb_h; }
-	else if (w < 0) w = pb_w * (double) h / (double) pb_h;
-	else if (h < 0) h = pb_h * (double) w / (double) pb_w;
-	pb_rs = pb_w * pb_h > w * h; // rescale after pixel processing
+	if (w <= 0 && h <= 0) { w = pb_w; h = pb_h; }
+	else if (w <= 0) w = pb_w * (double) h / (double) pb_h;
+	else if (h <= 0) h = pb_h * (double) w / (double) pb_w;
+	pb_rs = pb_w * pb_h > w * h; // rescale before pixel processing
 
 	if (pb_rs) {
 		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
@@ -174,7 +179,8 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 
 static PyMethodDef pp_methods[] = {
 	{"process_image_file", pp_process_image_file, METH_VARARGS,
-		"(path, max_w, max_h, brightness_k) Load image and scale/process it."},
+		"process_image_file(path, max_w, max_h, scale_interp, brightness_k)"
+			" -> (buff, w, h, rs, alpha) - Load image and scale/process it."},
 	{NULL, NULL, 0, NULL}
 };
 

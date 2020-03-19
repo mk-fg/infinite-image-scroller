@@ -19,7 +19,13 @@ Needs Python-3.x, `Gtk3 <https://wiki.gnome.org/Projects/GTK%2B>`_ and
 `PyGObject <https://wiki.gnome.org/action/show/Projects/PyGObject>`_ to run.
 All of these usually come pre-installed on desktop linuxes.
 
+There's also optional pixbuf_proc.c module which would need gcc and gtk headers
+to build, and allows to load/scale/process images asynchronously in background
+threads without stuttering.
+
 Aimed to be rather simple and straightforward, not a full-fledged image viewer.
+
+See below for info on general usage and specific features.
 
 
 
@@ -62,7 +68,7 @@ See ``./infinite-image-scroller.py --help`` for full list of available options.
 Appearance
 ``````````
 
-`Gtk3 CSS <https://developer.gnome.org/gtk3/stable/chap-css-overview.html>`_
+`Gtk3 CSS <https://developer.gnome.org/gtk3/stable/theming.html>`_
 (e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window somewhat
 and also to define new key bindings there.
 
@@ -124,7 +130,8 @@ Image processing
 When using -b/--brightness option to apply pixel-level processing to images,
 helper pixbuf_proc.so C-API module has to be compiled::
 
-  gcc -O2 -fpic --shared $(python3-config --includes) pixbuf_proc.c -o pixbuf_proc.so
+  gcc -O2 -fpic --shared `python3-config --includes` \
+    `pkg-config --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
 
 Can be left in the same dir as the main script or PYTHONPATH anywhere.
 
@@ -132,15 +139,16 @@ Not using PIL/pillow module because simple R/G/B multiplication it uses for this
 stuff is suboptimal.
 
 
-Optimization
-````````````
+Performance
+```````````
 
-When scrolling large images, synchronous loading (esp. from non-local
-filesystem) and resizing (for large images in particular) can cause stuttering.
+When scrolling large-enough images, synchronous loading (esp. from non-local
+filesystem) and resizing (for high-res pics in particular) can cause
+stuttering, blocking GUI operation while it happens.
 
-Bundled pixbuf_proc.so helper module tries to address that as well, by
-loading/scaling images in separate background non-GIL-locked threads, and will
-be auto-imported if it's available.
+Bundled pixbuf_proc.so helper module tries to address that as well,
+by loading/scaling images in separate background non-GIL-locked threads,
+and will be auto-imported if it's available.
 
 See "Image processing" section above for how to build it.
 
