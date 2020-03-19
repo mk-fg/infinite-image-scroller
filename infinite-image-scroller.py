@@ -303,8 +303,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 					wa, int(wa / (wx / hx)), self.conf.image_scale_algo )
 			else:
 				try:
-					buff, w, h, rs = self.pp.process_image_file(
-						image.path, wa, -1, self.conf.image_brightness or 1.0 )
+					buff, w, h, rs = self.pp.process_image_file( image.path, wa, -1,
+						int(self.conf.image_scale_algo), self.conf.image_brightness or 1.0 )
 				except self.pp.error as err:
 					self.log.error('Failed to load/process image: {}', err)
 					self.box_images.remove(image)
@@ -400,7 +400,6 @@ def main(args=None, conf=None):
 				and reshuffle files if -r/--shuffle is also specified.''')
 
 	group = parser.add_argument_group('Image processing')
-	# XXX: drop this algo or check if pixbuf load+scale supports it somehow
 	group.add_argument('-z', '--scaling-interp',
 		default=scale_algos[0], metavar='algo', help=f'''
 			Interpolation algorithm to use to scale images to window size.

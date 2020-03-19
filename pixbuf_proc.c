@@ -89,6 +89,7 @@ void HSPtoRGB(
 static PyObject *pp_error;
 
 void pp_brightness(unsigned char *buff, unsigned int buff_len, double k) {
+	if (k == 1.0) return;
 	double r, g, b, h, s, p;
 	unsigned char *end = buff + buff_len;
 	while (buff < end) {
@@ -102,14 +103,14 @@ void pp_brightness(unsigned char *buff, unsigned int buff_len, double k) {
 
 static PyObject *
 pp_process_image_file(PyObject *self, PyObject *args) {
-	char *path; int w; int h; double brightness_k;
-	if (!PyArg_ParseTuple( args,
-		"siid", &path, &w, &h, &brightness_k )) return NULL;
+	char *path; int w; int h; int scale_interp; double brightness_k;
+	if (!PyArg_ParseTuple( args, "siiid",
+		&path, &w, &h, &scale_interp, &brightness_k )) return NULL;
 
-	char *err; int err_n;
+	char *err = NULL; int err_n;
 
 	GError *gerr = NULL;
-	GdkPixbuf *pb = NULL;
+	GdkPixbuf *pb = NULL, *pb_old = NULL;
 
 	PyObject *res = NULL;
 	int pb_w, pb_h, pb_rs;
@@ -118,27 +119,45 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 	if (brightness_k < 0) {
 		err_n = asprintf(&err, "Brightness cannot be negative: %f", brightness_k);
 		PyErr_SetString(PyExc_ValueError, err);
-		goto end; }
+		return NULL; }
 
 	Py_BEGIN_ALLOW_THREADS // -- no python stuff beyond this point
 
-	pb = gdk_pixbuf_new_from_file_at_size(path, w, h, &gerr);
-	if (!pb) goto end;
+	pb = gdk_pixbuf_new_from_file(path, &gerr);
+	if (!pb) {
+		err_n = asprintf(&err, "GdkPixbuf image load error - %s", gerr->message);
+		g_error_free(gerr);
+		goto end; }
+	if (gdk_pixbuf_get_colorspace(pb) != GDK_COLORSPACE_RGB) {
+		err = "incorrect GdkPixbuf colorspace";
+		goto end; }
+
 	pb_w = gdk_pixbuf_get_width(pb);
 	pb_h = gdk_pixbuf_get_height(pb);
+	if (w < 0 && h < 0) { w = pb_w; h = pb_h; }
+	else if (w < 0) w = pb_w * (double) h / (double) pb_h;
+	else if (h < 0) h = pb_h * (double) w / (double) pb_w;
+	pb_rs = pb_w * pb_h > w * h; // rescale after pixel processing
+
+	if (pb_rs) {
+		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
+		pp_brightness(buff, buff_len, brightness_k); }
+
+	if (pb_w != w || pb_h != h) {
+		pb_old = pb; pb_w = w; pb_h = h;
+		pb = gdk_pixbuf_scale_simple(pb_old, w, h, scale_interp);
+		g_object_unref(pb_old);
+		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len); }
+
+	if (!pb_rs) pp_brightness(buff, buff_len, brightness_k);
+
 	pb_rs = gdk_pixbuf_get_rowstride(pb);
-	// XXX: check/set pb colorspace here?
-	buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
-	if (brightness_k != 1.0) pp_brightness(buff, buff_len, brightness_k);
 
 	end:
 	Py_END_ALLOW_THREADS // -- python stuff allowed again
 
 	if (buff) res = Py_BuildValue("(y#iii)", buff, buff_len, pb_w, pb_h, pb_rs);
-	if (gerr) {
-		err_n = asprintf(&err, "GdkPixbuf image load error - %s", gerr->message);
-		PyErr_SetString(pp_error, err);
-		g_error_free(gerr); }
+	if (err) PyErr_SetString(pp_error, err);
 	if (pb) g_object_unref(pb);
 
 	return res;
