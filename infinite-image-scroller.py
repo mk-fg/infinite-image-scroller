@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 import itertools as it, operator as op, functools as ft
-import pathlib as pl, collections as cs
+import pathlib as pl, collections as cs, dataclasses as dc
 import os, sys, re, logging, textwrap, random, signal
 
 import gi
@@ -29,10 +29,22 @@ get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
 dedent = lambda text: textwrap.dedent(text).strip('\n') + '\n'
 
-class adict(dict):
-	def __init__(self, *args, **kwargs):
-		super().__init__(*args, **kwargs)
-		self.__dict__ = self
+@dc.dataclass
+class Pos:
+	x: int = 0
+	y: int = 0
+	w: int = 0
+	h: int = 0
+
+@dc.dataclass
+class Image:
+	path: str
+	gtk: Gtk.Image
+	pb_src: GdkPixbuf.Pixbuf = None # source-size pixbuf, only used with sync loading
+	pb_proc: GdkPixbuf.Pixbuf = None # only used with helper module
+	w: int = None
+	w_chk: int = None
+	displayed: bool = False
 
 
 class ScrollerConf:
@@ -199,16 +211,15 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if self.place_window_ev:
 			self.disconnect(self.place_window_ev)
 			self.place_window_ev = None
-
-		dsp, sg = w.get_screen().get_display(), adict(x=0, y=0, w=0, h=0)
+		dsp, sg = w.get_screen().get_display(), Pos()
 		geom = dict(S=sg)
 		for n in range(dsp.get_n_monitors()):
 			rct = dsp.get_monitor(n).get_geometry()
-			mg = geom[f'M{n+1}'] = adict(x=rct.x, y=rct.y, w=rct.width, h=rct.height)
+			mg = geom[f'M{n+1}'] = Pos(x=rct.x, y=rct.y, w=rct.width, h=rct.height)
 			sg.w, sg.h = max(sg.w, mg.x + mg.w), max(sg.h, mg.y + mg.h)
 		ww = wh = None
 		if self.conf.win_w and self.conf.win_h:
-			get_val = lambda v,k: int(v) if v.isdigit() else geom[v][k]
+			get_val = lambda v,k: int(v) if v.isdigit() else getattr(geom[v], k)
 			ww, wh = get_val(self.conf.win_w, 'w'), get_val(self.conf.win_h, 'h')
 			w.resize(ww, wh)
 			self.log.debug('win-resize: {} {}', ww, wh)
@@ -217,7 +228,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			wx, wy = w.get_position()
 			get_pos = lambda v,k,wv: (
 				(int(v[1:]) if v[0] != '-' else (sg[k] - wv - int(v[1:])))
-				if v[0] in '+-' else geom[v][k] )
+				if v[0] in '+-' else getattr(geom[v], k) )
 			if self.conf.win_x: wx = get_pos(self.conf.win_x, 'x', ww)
 			if self.conf.win_y: wy = get_pos(self.conf.win_y, 'y', wh)
 			self.log.debug('win-move: {} {}', wx, wy)
@@ -265,7 +276,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		h_offset = 0
 		while len(self.box_images) > self.conf.queue_size:
 			image = self.box_images.popleft()
-			h_offset += image.get_allocation().height
+			h_offset += image.gtk.get_allocation().height
 			self.image_remove(image)
 		h_offset += self.conf.vbox_spacing
 		return h_offset
@@ -281,29 +292,28 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			self.log.error( 'Failed to get new image'
 				' in {} attempt(s), giving up', self.conf.image_open_attempts )
 			return
-		self.box.add(image)
+		self.box.add(image.gtk)
 		self.box_images.append(image)
-		image.show()
+		image.gtk.show()
 		return True
 
 	def image_remove(self, image):
-		self.box.remove(image)
-		image.destroy()
+		self.box.remove(image.gtk)
+		image.gtk.destroy()
 
 	def image_load(self, path):
 		self.log.debug('Adding image: {}', path)
+		image = Image(path=path, gtk=Gtk.Image())
 		if not self.pp:
-			try: pixbuf = GdkPixbuf.Pixbuf.new_from_file(path)
+			try: image.pb_src = GdkPixbuf.Pixbuf.new_from_file(path)
 			except Exception as err:
 				self.log.error( 'Failed to create gdk-pixbuf'
 					' from file: [{}] {}', err.__class__.__name__, err )
 				return
-		else: pixbuf = None # loaded/resized by pixbuf_proc later
-		image = Gtk.Image()
-		image.pixbuf_src, image.path = pixbuf, path
-		image.w_chk = image.displayed = None
-		if self.conf.image_opacity < 1.0: image.set_opacity(self.conf.image_opacity)
+		if self.conf.image_opacity < 1.0:
+			image.gtk.set_opacity(self.conf.image_opacity)
 		return image
+
 
 	def image_set_pixbufs(self, *ev_args, init=False):
 		'Must be called to set image widget contents to resized pixbufs'
@@ -317,22 +327,25 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		for image in list(self.box_images):
 			if image.w_chk == wa: continue
 			image.w_chk = wa
-			if image.pixbuf_src:
-				wx, hx = image.pixbuf_src.get_width(), image.pixbuf_src.get_height()
-				pixbuf = image.pixbuf_src.scale_simple(
+
+			if image.pb_src: # simple sync processing with no helper module
+				wx, hx = image.pb_src.get_width(), image.pb_src.get_height()
+				pixbuf = image.pb_src.scale_simple(
 					wa, int(wa / (wx / hx)), self.conf.image_scale_algo )
-				image.set_from_pixbuf(pixbuf)
+				image.gtk.set_from_pixbuf(pixbuf)
 				image.displayed = True
-			else:
-				image.w, image.pixbuf_proc = wa, None
+
+			else: # background pixbuf_proc.so threads, except when init=True
+				image.w, image.pb_proc = wa, None
 				log.debug('pixbuf_proc [{}]: {}', 'init' if init else 'queue', image.path)
 				if init and init_height > 0:
 					self.image_set_pixbuf_proc(image)
-					if image.pixbuf_proc: init_height -= image.pixbuf_proc.get_width()
+					if image.pb_proc: init_height -= image.pb_proc.get_width()
 					self.thread_results.append(image)
 				else: self.thread_queue.put_nowait(image)
 
 		if init and self.pp: self.image_set_pixbuf_thread_cb()
+
 
 	def image_set_pixbuf_proc(self, image):
 		wa = image.w
@@ -341,10 +354,10 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				image.path, wa, -1, int(self.conf.image_scale_algo), self.conf.image_brightness or 1.0 )
 		except self.pp.error as err:
 			self.log.error('Failed to load/process image: {}', err)
-			image.pixbuf_proc = False
+			image.pb_proc = False
 			return
 		if image.w != wa: return # was re-queued
-		image.pixbuf_proc = GdkPixbuf.Pixbuf\
+		image.pb_proc = GdkPixbuf.Pixbuf\
 			.new_from_data(buff, GdkPixbuf.Colorspace.RGB, alpha, 8, w, h, rs)
 
 	def image_set_pixbuf_thread(self):
@@ -361,12 +374,12 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			try: image = self.thread_results.pop()
 			except IndexError: break
 			log.debug('pixbuf_proc [signal]: {}', image.path)
-			if image.pixbuf_proc is False:
+			if image.pb_proc is False:
 				self.box_images.remove(image)
 				self.image_remove(image)
 			else:
-				image.set_from_pixbuf(image.pixbuf_proc)
-				image.pixbuf_proc, image.displayed = None, True
+				image.gtk.set_from_pixbuf(image.pb_proc)
+				image.pb_proc, image.displayed = None, True
 		return True
 
 
