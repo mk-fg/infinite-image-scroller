@@ -15,9 +15,8 @@ Similar widget/behavior is usually called "image carousel" in web development.
 ``--auto-scroll`` option allows slideshow-like behavior, but otherwise one can
 scroll through these manually.
 
-Needs Python-3.x, `Gtk3 <https://wiki.gnome.org/Projects/GTK%2B>`_ and
-`PyGObject <https://wiki.gnome.org/action/show/Projects/PyGObject>`_ to run.
-All of these usually come pre-installed on desktop linuxes.
+Needs Python-3.x, GTK3_ and PyGObject_ to run.
+These tend to come pre-installed on desktop linuxes.
 
 There's also optional pixbuf_proc.c module which would need gcc and gtk headers
 to build, and allows to load/scale/process images asynchronously in background
@@ -27,6 +26,8 @@ Aimed to be rather simple and straightforward, not a full-fledged image viewer.
 
 See below for info on general usage and specific features.
 
+.. _GTK3: https://www.gtk.org/
+.. _PyGObject: https://pygobject.readthedocs.io/
 
 
 Usage
@@ -147,7 +148,7 @@ filesystem) and resizing (for high-res pics in particular) can cause
 stuttering, blocking GUI operation while it happens.
 
 Bundled pixbuf_proc.so helper module tries to address that as well,
-by loading/scaling images in separate background non-GIL-locked threads,
+by loading/scaling images in a separate background non-GIL-locked threads,
 and will be auto-imported if it's available.
 
 See "Image processing" section above for how to build it.
@@ -157,11 +158,12 @@ See "Image processing" section above for how to build it.
 TODO
 ----
 
-- Option for a horizontal scrolling instead of vertical, maybe 2d grid,
-  reverse direction.
+- Click-and-drag scrolling.
 
 - Some popup menu (e.g. on right-click) for options maybe.
 
 - Load stuff when scrolling in either direction, not just one.
 
 - More keybindings - scroll to next image, linger on one image, pause.
+
+- 2d grid mode.
