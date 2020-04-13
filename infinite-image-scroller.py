@@ -347,7 +347,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		'Must be called to set image widget contents to resized pixbufs'
 		if self.box_images_init:
 			self.box_images_init, init = False, True
-			init_sz = getattr(self.get_allocation(), self.dim_scroll) / self.conf.queue_preload_at
+			init_sz = getattr(self.get_allocation(), self.dim_scroll) * 1.5
 			for n in range(self.conf.queue_size): self.image_add()
 
 		self.ev_debounce_clear('set-pixbufs')
