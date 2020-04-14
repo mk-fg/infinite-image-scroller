@@ -1,9 +1,9 @@
 =======================
 Infinite Image Scroller
 =======================
--------------------------------------------------------------
- Python3/Gtk3 desktop app to scroll images across the window
--------------------------------------------------------------
+-----------------------------------------------------------
+ Python GTK3 desktop app to scroll images across the window
+-----------------------------------------------------------
 
 Script loops through all specified image files/dirs, resizes each to window
 width/height (preserving aspect ratio) and scrolls them one after another,
@@ -29,6 +29,10 @@ See below for info on general usage and specific features.
 .. _GTK3: https://www.gtk.org/
 .. _PyGObject: https://pygobject.readthedocs.io/
 
+.. contents::
+  :backlinks: none
+
+
 
 Usage
 -----
@@ -49,8 +53,7 @@ newline-separated list-file or stdin::
 ``-a 10:0.1`` means "scroll by 10px every 0.1 seconds".
 
 More fancy display options - scrolling transparent 800px
-sticky/undecorated/unfocusable/bottom-layer sidebar
-(like `conky <https://en.wikipedia.org/wiki/Conky_(software)>`_)
+sticky/undecorated/unfocusable/bottom-layer sidebar (like conky_)
 on the right::
 
   % ./infinite-image-scroller.py --pos=800xS-0 --spacing=10 --opacity=0.7 \
@@ -65,13 +68,14 @@ Or borderless window on whole second monitor::
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 
+.. _conky: https://en.wikipedia.org/wiki/Conky_(software)
+
 
 Appearance
 ``````````
 
-`Gtk3 CSS <https://developer.gnome.org/gtk3/stable/theming.html>`_
-(e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window somewhat
-and also to define new key bindings there.
+`GTK3 CSS`_ (e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window
+somewhat and also to define new key bindings there.
 
 Full hierarchy of gtk3 widgets used (without "Gtk" prefixes)::
 
@@ -83,7 +87,7 @@ Full hierarchy of gtk3 widgets used (without "Gtk" prefixes)::
         ...
 
 (to see tree of these for running app, find all style nodes, tweak stuff on the
-fly and such, use `Gtk-Inspector <https://wiki.gnome.org/Projects/GTK%2B/Inspector>`_)
+fly and such, use GtkInspector_)
 
 Default css just makes backgrounds in all of these transparent, which doesn't affect
 opacity of the images, which can be controlled with ``-o/--opacity`` option instead.
@@ -98,6 +102,9 @@ There isn't much to tweak inside this window in general - just images.
 See ``--wm-hints``, ``--wm-type-hints``, ``--icon-name`` and similar options for
 stuff related to WM-side decorations like title bar, borders, icon, etc.
 
+.. _GTK3 CSS: https://developer.gnome.org/gtk3/stable/theming.html
+.. _GtkInspector: https://wiki.gnome.org/Projects/GTK%2B/Inspector
+
 
 Key bindings
 ````````````
@@ -107,7 +114,7 @@ Default keybindings are:
 - Arrow keys, Page Up/Down, WSAD - scroll.
 - Esc, q, ctrl+q, ctrl+w - quit.
 
-Key/mouse bindings can be added/changed via Gtk3 CSS, same as per "Appearance"
+Key/mouse bindings can be added/changed via GTK3 CSS, same as per "Appearance"
 section above - look there for details.
 
 Example - add Vi keybindings for scrolling in this window (append this to
