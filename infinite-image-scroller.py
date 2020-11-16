@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.8
 
 import itertools as it, operator as op, functools as ft
 import pathlib as pl, collections as cs, dataclasses as dc
@@ -94,6 +94,7 @@ class ScrollerConf:
 	queue_preload_at = 0.7
 	scroll_dir = ScrollDirection.down
 	scroll_auto = None
+	timeout_id = None
 	image_proc_module = False
 	image_proc_threads = None
 	image_opacity = 1.0
@@ -207,7 +208,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 		if self.conf.scroll_auto:
 			px, s = self.conf.scroll_auto
-			GLib.timeout_add(s * 1000, ft.partial(
+			self.conf.timeout_id = GLib.timeout_add(s * 1000, ft.partial(
 				self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
 
 
@@ -272,6 +273,12 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		key_sum = ' '.join(sorted(key_sum) + [key_name]).lower()
 		self.log.debug('key-press-event: {!r}', key_sum)
 		if key_sum in self.conf.quit_keys: self.app.quit()
+		if key_sum == 'm':
+			self.speedchange(1)
+		elif key_sum == 'n':
+			self.speedchange(-1)
+		elif key_sum == 'p' or key_sum == 'space':
+			self.speedchange(0)
 
 
 	def scroll_update(self, adj, offset=None, repeat=False):
@@ -421,6 +428,48 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		offset += self.dim_scroll_for_image(image.gtk)
 		offset += self.conf.box_spacing
 		self.scroll_adj.set_value(offset)
+
+	def speedchange(self, dir = -1):
+		# dir == -1 means slower, 1 means faster, 0 means stop/pause (or resume/unpause) (paused state determined by if self.conf.timeout_id is None or not)
+
+		# Stop the scroller
+		if self.conf.timeout_id:
+			GLib.source_remove(self.conf.timeout_id)
+
+		# Pause if not paused. If paused, continue, which will unpause after the if/elif's
+		if dir == 0 and self.conf.timeout_id is not None:
+			self.conf.timeout_id = None
+			return
+		elif dir > 0 and (not self.conf.timeout_id or not self.conf.scroll_auto):  # What if one is, one isn't?
+			# Speed up from a standstill
+			self.conf.scroll_auto = 1, .01
+		elif dir > 0:
+			# Speed up but dividing interval in half
+			# Possible bug: Could scroll_auto be None here?
+			self.conf.scroll_auto = self.conf.scroll_auto[0], self.conf.scroll_auto[1] / 2
+			if self.conf.scroll_auto[1] < .001:
+				# If interval too small, increment px instead (restore interval)
+				self.conf.scroll_auto = self.conf.scroll_auto[0] + 1, self.conf.scroll_auto[1] * 2
+		elif dir < 0:
+			# Slow down
+			if self.conf.scroll_auto[0] > 1:
+				# if px > 1, reduce by 1 to slow down
+				self.conf.scroll_auto = self.conf.scroll_auto[0] - 1, self.conf.scroll_auto[1]
+			else:
+				# if px == 1, then slow down by adding .005 seconds
+				self.conf.scroll_auto = self.conf.scroll_auto[0], self.conf.scroll_auto[1] + .005
+
+		# Adjust s if too slow
+		if self.conf.scroll_auto[1] > .1 and self.conf.scroll_auto[0] == 1:
+			self.conf.scroll_auto = 1, .1
+		# Adjust px if too high
+		if self.conf.scroll_auto[0] > 20:
+			self.conf.scroll_auto = 20, self.conf.scroll_auto[1]
+		# Start a timeout again
+		px, s = self.conf.scroll_auto
+		print("s: {}, px: {}".format(s, px))
+		self.conf.timeout_id = GLib.timeout_add(s * 1000, ft.partial(self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
+
 
 
 

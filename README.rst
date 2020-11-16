@@ -113,6 +113,8 @@ Default keybindings are:
 
 - Arrow keys, Page Up/Down, WSAD - scroll.
 - Esc, q, ctrl+q, ctrl+w - quit.
+- p, space - pause.
+- n, m - slow down, speed up.
 
 Key/mouse bindings can be added/changed via GTK3 CSS, same as per "Appearance"
 section above - look there for details.
@@ -171,6 +173,6 @@ TODO
 
 - Load stuff when scrolling in either direction, not just one.
 
-- More keybindings - scroll to next image, linger on one image, pause.
+- More keybindings - scroll to next image, linger on one image.
 
 - 2d grid mode.
