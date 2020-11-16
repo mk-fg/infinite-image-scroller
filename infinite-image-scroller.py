@@ -93,8 +93,12 @@ class ScrollerConf:
 	event_delay = 0.2 # debounce delay for scrolling and window resizing
 	queue_size = 3
 	queue_preload_at = 0.7
+
 	scroll_dir = ScrollDirection.down
-	scroll_auto = None
+	scroll_auto = None # (px, interval)
+	scroll_auto_key_start = 1, 0.01
+	scroll_adj_k = 2
+
 	image_proc_module = False
 	image_proc_threads = None
 	image_opacity = 1.0
@@ -425,21 +429,22 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def scroll_adjust(self, adj):
 		px, s = self.conf.scroll_auto or (0, 0)
+		adj_k = self.conf.scroll_adj_k
 
 		if adj is ScrollAdjust.toggle:
 			if self.scroll_timer: px = s = 0 # pause
-			elif not (px and s): px, s = 1, 0.01 # start/resume from no-auto
+			elif not (px and s): px, s = self.conf.scroll_auto_key_start
 			else: s += 1e-6 # just to trigger change check below
 
 		elif adj is ScrollAdjust.faster:
 			if not self.conf.scroll_auto: # just start with any parameters
 				return self.scroll_adjust(ScrollAdjust.toggle)
-			if s < 1/120: px *= 2 # bump px jumps if it's >120fps already
-			else: s /= 2
+			if s < 1/120: px *= adj_k # bump px jumps if it's >120fps already
+			else: s /= adj_k
 
 		elif adj is ScrollAdjust.slower:
-			if px <= 1: px, s = 1, s * 1.5 # bump interval instead of sub-px skips
-			else: px /= 2
+			if px <= 1: px, s = 1, s * adj_k # bump interval instead of sub-px skips
+			else: px /= adj_k
 
 		if (px, s) != self.conf.scroll_auto:
 			log.debug( 'Scroll-adjust [{}]: [run={} speed={}] -> [run={} speed={}]',
