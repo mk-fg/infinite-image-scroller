@@ -29,6 +29,7 @@ get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
 dedent = lambda text: textwrap.dedent(text).strip('\n') + '\n'
 
+
 @dc.dataclass
 class Pos:
 	x: int = 0
@@ -86,9 +87,7 @@ class ScrollerConf:
 			bind "a" { "scroll-child" (step-left, 1) };
 			bind "d" { "scroll-child" (step-right, 1) }; }
 		#infinite-image-scroller scrolledwindow { -gtk-key-bindings: image-scroller-keys; }
-		#infinite-image-scroller,
-		#infinite-image-scroller * { background: transparent; }
-	''')
+		#infinite-image-scroller, #infinite-image-scroller * { background: transparent; }''')
 
 	box_spacing = 3
 	event_delay = 0.2 # debounce delay for scrolling and window resizing

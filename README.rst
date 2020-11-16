@@ -116,11 +116,11 @@ Default keybindings are:
 - p, space - pause.
 - n, m - slow down, speed up.
 
-Key/mouse bindings can be added/changed via GTK3 CSS, same as per "Appearance"
-section above - look there for details.
+Some key/mouse bindings can be added/changed via GTK3 CSS,
+same as per "Appearance" section above - look there for details.
 
-Example - add Vi keybindings for scrolling in this window (append this to
-e.g. ``~/.config/gtk-3.0/gtk.css``)::
+Example - add Vi keybindings for scrolling in this window
+(append this to e.g. ``~/.config/gtk-3.0/gtk.css``)::
 
   @binding-set image-scroller-keys {
     bind "k" { "scroll-child" (step-up, 0) };
@@ -164,8 +164,8 @@ See "Image processing" section above for how to build it.
 
 
 
-TODO
-----
+Potential TODOs
+---------------
 
 - Click-and-drag scrolling.
 
@@ -174,5 +174,7 @@ TODO
 - Load stuff when scrolling in either direction, not just one.
 
 - More keybindings - scroll to next image, linger on one image.
+
+- Load ScrollerConf from ini or something, for diff keybindings and such.
 
 - 2d grid mode.
