@@ -1,4 +1,4 @@
-#!/usr/bin/env python3.8
+#!/usr/bin/env python3
 
 import itertools as it, operator as op, functools as ft
 import pathlib as pl, collections as cs, dataclasses as dc
@@ -50,6 +50,8 @@ class Image:
 class ScrollDirection(enum.IntEnum):
 	left = 0; right = 1; up = 2; down = 3
 
+ScrollAdjust = enum.Enum('ScrollAdjust', 'slower faster toggle')
+
 
 class ScrollerConf:
 
@@ -94,16 +96,12 @@ class ScrollerConf:
 	queue_preload_at = 0.7
 	scroll_dir = ScrollDirection.down
 	scroll_auto = None
-	timeout_id = None
 	image_proc_module = False
 	image_proc_threads = None
 	image_opacity = 1.0
 	image_brightness = None
 	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
 	image_open_attempts = 3
-
-	# Format is '[mod1 ...] key', with modifier keys alpha-sorted, see _window_key() func
-	quit_keys = 'q', 'control q', 'control w', 'escape'
 
 	def __init__(self, **kws):
 		for k, v in kws.items():
@@ -206,10 +204,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.connect( 'configure-event',
 			ft.partial(self.ev_debounce, ev='set-pixbufs', cb=self.image_set_pixbufs) )
 
-		if self.conf.scroll_auto:
-			px, s = self.conf.scroll_auto
-			self.conf.timeout_id = GLib.timeout_add(s * 1000, ft.partial(
-				self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
+		self.scroll_timer = None
+		if self.conf.scroll_auto: self.scroll_adjust(ScrollAdjust.toggle)
 
 
 	def ev_debounce_is_set(self, ev): return ev in self.ev_timers
@@ -272,13 +268,11 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			if ev.state & st == st: key_sum.append(mod)
 		key_sum = ' '.join(sorted(key_sum) + [key_name]).lower()
 		self.log.debug('key-press-event: {!r}', key_sum)
-		if key_sum in self.conf.quit_keys: self.app.quit()
-		if key_sum == 'm':
-			self.speedchange(1)
-		elif key_sum == 'n':
-			self.speedchange(-1)
-		elif key_sum == 'p' or key_sum == 'space':
-			self.speedchange(0)
+		# Key format is '[mod1 ...] key', with modifier keys alpha-sorted
+		if key_sum in ['q', 'control q', 'control w', 'escape']: self.app.quit()
+		elif key_sum == 'm': self.scroll_adjust(ScrollAdjust.faster)
+		elif key_sum == 'n': self.scroll_adjust(ScrollAdjust.slower)
+		elif key_sum in ['p', 'space']: self.scroll_adjust(ScrollAdjust.toggle)
 
 
 	def scroll_update(self, adj, offset=None, repeat=False):
@@ -429,48 +423,38 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		offset += self.conf.box_spacing
 		self.scroll_adj.set_value(offset)
 
-	def speedchange(self, dir = -1):
-		# dir == -1 means slower, 1 means faster, 0 means stop/pause (or resume/unpause) (paused state determined by if self.conf.timeout_id is None or not)
 
-		# Stop the scroller
-		if self.conf.timeout_id:
-			GLib.source_remove(self.conf.timeout_id)
+	def scroll_adjust(self, adj):
+		px, s = self.conf.scroll_auto or (0, 0)
 
-		# Pause if not paused. If paused, continue, which will unpause after the if/elif's
-		if dir == 0 and self.conf.timeout_id is not None:
-			self.conf.timeout_id = None
-			return
-		elif dir > 0 and (not self.conf.timeout_id or not self.conf.scroll_auto):  # What if one is, one isn't?
-			# Speed up from a standstill
-			self.conf.scroll_auto = 1, .01
-		elif dir > 0:
-			# Speed up but dividing interval in half
-			# Possible bug: Could scroll_auto be None here?
-			self.conf.scroll_auto = self.conf.scroll_auto[0], self.conf.scroll_auto[1] / 2
-			if self.conf.scroll_auto[1] < .001:
-				# If interval too small, increment px instead (restore interval)
-				self.conf.scroll_auto = self.conf.scroll_auto[0] + 1, self.conf.scroll_auto[1] * 2
-		elif dir < 0:
-			# Slow down
-			if self.conf.scroll_auto[0] > 1:
-				# if px > 1, reduce by 1 to slow down
-				self.conf.scroll_auto = self.conf.scroll_auto[0] - 1, self.conf.scroll_auto[1]
+		if adj is ScrollAdjust.toggle:
+			if self.scroll_timer: px = s = 0 # pause
+			elif not (px and s): px, s = 1, 0.01 # start/resume from no-auto
+			else: s += 1e-6 # just to trigger change check below
+
+		elif adj is ScrollAdjust.faster:
+			if not self.conf.scroll_auto: # just start with any parameters
+				return self.scroll_adjust(ScrollAdjust.toggle)
+			if s < 1/120: px *= 2 # bump px jumps if it's >120fps already
+			else: s /= 2
+
+		elif adj is ScrollAdjust.slower:
+			if px <= 1: px, s = 1, s * 1.5 # bump interval instead of sub-px skips
+			else: px /= 2
+
+		if (px, s) != self.conf.scroll_auto:
+			log.debug( 'Scroll-adjust [{}]: [run={} speed={}] -> [run={} speed={}]',
+				adj.name, bool(self.scroll_timer), self.conf.scroll_auto, bool(px and s), (px, s) )
+			if self.scroll_timer: GLib.source_remove(self.scroll_timer)
+			if not (px and s): self.scroll_timer = None
 			else:
-				# if px == 1, then slow down by adding .005 seconds
-				self.conf.scroll_auto = self.conf.scroll_auto[0], self.conf.scroll_auto[1] + .005
-
-		# Adjust s if too slow
-		if self.conf.scroll_auto[1] > .1 and self.conf.scroll_auto[0] == 1:
-			self.conf.scroll_auto = 1, .1
-		# Adjust px if too high
-		if self.conf.scroll_auto[0] > 20:
-			self.conf.scroll_auto = 20, self.conf.scroll_auto[1]
-		# Start a timeout again
-		px, s = self.conf.scroll_auto
-		print("s: {}, px: {}".format(s, px))
-		self.conf.timeout_id = GLib.timeout_add(s * 1000, ft.partial(self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
-
-
+				self.conf.scroll_auto = px, s
+				self.scroll_timer = GLib.timeout_add(s * 1000, ft.partial(
+					self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
+		else:
+			log.warning(
+				'Scroll-adjust BUG [{}]: [run={} speed={}] -> no changes!',
+				adj.name, bool(self.scroll_timer), self.conf.scroll_auto )
 
 
 class ScrollerApp(Gtk.Application):
