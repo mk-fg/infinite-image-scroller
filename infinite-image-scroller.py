@@ -446,19 +446,19 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			if px <= 1: px, s = 1, s * adj_k # bump interval instead of sub-px skips
 			else: px /= adj_k
 
-		if (px, s) != self.conf.scroll_auto:
-			log.debug( 'Scroll-adjust [{}]: [run={} speed={}] -> [run={} speed={}]',
-				adj.name, bool(self.scroll_timer), self.conf.scroll_auto, bool(px and s), (px, s) )
-			if self.scroll_timer: GLib.source_remove(self.scroll_timer)
-			if not (px and s): self.scroll_timer = None
-			else:
-				self.conf.scroll_auto = px, s
-				self.scroll_timer = GLib.timeout_add(s * 1000, ft.partial(
-					self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
-		else:
-			log.warning(
+		if (px, s) == self.conf.scroll_auto:
+			return log.warning(
 				'Scroll-adjust BUG [{}]: [run={} speed={}] -> no changes!',
 				adj.name, bool(self.scroll_timer), self.conf.scroll_auto )
+
+		log.debug( 'Scroll-adjust [{}]: [run={} speed={}] -> [run={} speed={}]',
+			adj.name, bool(self.scroll_timer), self.conf.scroll_auto, bool(px and s), (px, s) )
+		if self.scroll_timer: GLib.source_remove(self.scroll_timer)
+		if not (px and s): self.scroll_timer = None
+		else:
+			self.conf.scroll_auto = px, s
+			self.scroll_timer = GLib.timeout_add(s * 1000, ft.partial(
+				self.scroll_update, self.scroll_adj, offset=px, repeat=True ))
 
 
 class ScrollerApp(Gtk.Application):
