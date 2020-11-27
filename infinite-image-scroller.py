@@ -91,8 +91,8 @@ class ScrollerConf:
 
 	box_spacing = 3
 	event_delay = 0.2 # debounce delay for scrolling and window resizing
-	queue_size = 3
-	queue_preload_at = 0.7
+	queue_size = 10
+	queue_preload_at = 0.6
 
 	scroll_dir = ScrollDirection.down
 	scroll_auto = None # (px, interval)
