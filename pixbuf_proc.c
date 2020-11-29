@@ -4,7 +4,7 @@
 //
 // Build with:
 //  gcc -O2 -fpic --shared `python3-config --includes` \
-//    `pkg-config --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
+//    `pkg-config --cflags gtk+-3.0` -lgtk-3 pixbuf_proc.c -o pixbuf_proc.so
 //
 // Usage:
 //  import pixbuf_proc

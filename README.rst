@@ -141,12 +141,12 @@ When using -b/--brightness option to apply pixel-level processing to images,
 helper pixbuf_proc.so C-API module has to be compiled::
 
   gcc -O2 -fpic --shared `python3-config --includes` \
-    `pkg-config --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
+    `pkg-config --cflags gtk+-3.0` -lgtk-3 pixbuf_proc.c -o pixbuf_proc.so
 
 Can be left in the same dir as the main script or PYTHONPATH anywhere.
 
 Not using PIL/pillow module because simple R/G/B multiplication it uses for this
-stuff is suboptimal.
+stuff is suboptimal, and GIL prevents using background threads for such processing.
 
 
 Performance
