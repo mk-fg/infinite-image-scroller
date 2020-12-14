@@ -150,7 +150,7 @@ class ScrollerConf:
 					except configparser.Error: pass
 					else: break
 
-	def pprint(self, title=None, empty_vals=False):
+	def pprint(self, title=None):
 		cat, chk = None, re.compile(
 			'^({})_(.*)$'.format('|'.join(map(re.escape, self._conf_sections))) )
 		if title: print(f';; {title}')
@@ -736,19 +736,13 @@ def main(args=None, conf=None):
 		level=logging.DEBUG if opts.debug else logging.WARNING )
 	log = get_logger('main')
 
-	if opts.conf_dump_defaults:
-		conf.pprint('Default configuration options', empty_vals=True)
-		return
-
+	if opts.conf_dump_defaults: return conf.pprint('Default configuration options')
 	conf_user_paths = list(pl.Path(p).expanduser() for p in opts.conf or list())
 	for p in conf_user_paths:
 		if not os.access(p, os.R_OK):
 			parser.error(f'Specified config file is missing or inaccessible: {p}')
 	conf.update_from_files(*conf_user_paths)
-
-	if opts.conf_dump:
-		conf.pprint('Current configuration file(s) options')
-		return
+	if opts.conf_dump: return conf.pprint('Current configuration file(s) options')
 	if opts.dump_css: return print(conf._win_css.replace('\t', '  '), end='')
 
 	src_paths = opts.image_path or list()
