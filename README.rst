@@ -133,6 +133,8 @@ Example - add Vi keybindings for scrolling in this window
     -gtk-key-bindings: image-scroller-keys;
   }
 
+Other non-window keys can be changed via ini configuration file.
+
 
 Image processing
 ````````````````
@@ -163,6 +165,23 @@ and will be auto-imported if it's available.
 See "Image processing" section above for how to build it.
 
 
+Configuration File(s)
+`````````````````````
+
+Script will load any "infinite-image-scroller.ini" configuration file(s)
+from any of the $XDG_CONFIG_DIRS, $XDG_CONFIG_HOME, ~/.config directories,
+or any files specified with -c/--conf option directly, in that order.
+
+All sections and parameters in these are optional.
+Values in later files will override earlier ones.
+
+Run script with --conf-dump option to print resulting configuration
+(after loading all existing/specified files),
+or --conf-dump-defaults to see default configuration.
+
+Command-line parameters always override config files.
+
+
 
 Potential TODOs
 ---------------
@@ -174,7 +193,5 @@ Potential TODOs
 - Load stuff when scrolling in either direction, not just one.
 
 - More keybindings - scroll to next image, linger on one image.
-
-- Load ScrollerConf from ini or something, for diff keybindings and such.
 
 - 2d grid mode.

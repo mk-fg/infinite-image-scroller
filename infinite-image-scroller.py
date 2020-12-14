@@ -56,27 +56,21 @@ ScrollAdjust = enum.Enum('ScrollAdjust', 'slower faster toggle')
 
 class ScrollerConf:
 
-	app_id = 'net.fraggod.infinite-image-scroller'
-	no_session = False
+	misc_app_id = 'net.fraggod.infinite-image-scroller'
+	misc_no_session = False
+	misc_box_spacing = 3
+	misc_event_delay = 0.2 # debounce delay for scrolling and window resizing
 
 	win_title = 'infinite-image-scroller'
 	win_role = 'scroller-main'
-	win_icon = None
-	win_default_size = 700, 500
-	win_w = win_h = None
-	win_x = win_y = None
+	win_icon = ''
+	win_pos = ''
+	win_w = win_h = 0
+	win_x = win_y = 0
+	win_hints = win_type_hints = ''
 
-	wm_hints = None
-	wm_hints_all = (
-		' focus_on_map modal resizable hide_titlebar_when_maximized'
-		' stick maximize fullscreen keep_above keep_below decorated'
-		' deletable skip_taskbar skip_pager urgency accept_focus'
-		' auto_startup_notification mnemonics_visible focus_visible' ).split()
-	wm_type_hints = Gdk.WindowTypeHint.NORMAL
-	wm_type_hints_all = dict(
-		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
-
-	win_css = dedent('''
+	_win_size_default = 700, 500
+	_win_css = dedent('''
 		@binding-set image-scroller-keys {
 			bind "Up" { "scroll-child" (step-up, 0) };
 			bind "Down" { "scroll-child" (step-down, 0) };
@@ -88,28 +82,89 @@ class ScrollerConf:
 			bind "d" { "scroll-child" (step-right, 1) }; }
 		#infinite-image-scroller scrolledwindow { -gtk-key-bindings: image-scroller-keys; }
 		#infinite-image-scroller, #infinite-image-scroller * { background: transparent; }''')
+	_win_hints_all = (
+		' focus_on_map modal resizable hide_titlebar_when_maximized'
+		' stick maximize fullscreen keep_above keep_below decorated'
+		' deletable skip_taskbar skip_pager urgency accept_focus'
+		' auto_startup_notification mnemonics_visible focus_visible' ).split()
+	_win_type_hints_all = dict(
+		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
 
-	box_spacing = 3
-	event_delay = 0.2 # debounce delay for scrolling and window resizing
-	queue_size = 10
-	queue_preload_at = 0.6
-
-	scroll_dir = ScrollDirection.down
-	scroll_auto = None # (px, interval)
-	scroll_auto_key_start = 1, 0.01
-	scroll_adj_k = 2
+	scroll_direction = 'down'
+	scroll_auto = '' # (px, interval)
+	scroll_adjust_k = 2
+	scroll_queue_size = 10
+	scroll_queue_preload_at = 0.6
+	_scroll_auto_key_start = 1, 0.01
 
 	image_proc_module = False
-	image_proc_threads = None
+	image_proc_threads = 0
 	image_opacity = 1.0
-	image_brightness = None
-	image_scale_algo = GdkPixbuf.InterpType.BILINEAR
+	image_brightness = 1.0
+	image_scale_algo = 'bilinear'
 	image_open_attempts = 3
+
+	# Key combos format is lowercase "[mod1 ...] key, ...", with modifier keys alpha-sorted
+	# Use --debug option to see which exact key-sums get pressed
+	keys_quit = 'q, control q, control w, escape'
+	keys_scroll_faster = 'm'
+	keys_scroll_slower = 'n'
+	keys_scroll_toggle = 'p, space'
+
+	_conf_sections = 'misc', 'win', 'wm', 'scroll', 'image', 'keys'
+	_conf_file_name = 'infinite-image-scroller.ini'
 
 	def __init__(self, **kws):
 		for k, v in kws.items():
 			if not hasattr(self, k): raise AttributeError(k)
 			setattr(self, k, v)
+
+	def update_from_files(self, *paths):
+		for p in filter(None, os.environ.get('XDG_CONFIG_DIRS', '').split(':')):
+			p = pl.Path(p) / self._conf_file_name
+			if p.exists(): self.update_from_file(p)
+		p = os.environ.get('XDG_CONFIG_HOME')
+		if p: p = pl.Path(p)
+		elif p := os.environ.get('HOME'): p = pl.Path(p) / '.config'
+		if p and (p := p / self._conf_file_name) and p.exists(): self.update_from_file(p)
+		for p in paths: self.update_from_file(p)
+
+	def update_from_file(self, path):
+		import configparser
+		log.debug('Updating configuration from file: {}', path)
+		conf = configparser.ConfigParser(allow_no_value=True)
+		conf.optionxform = lambda k: k
+		with open(path) as src: conf.read_file(src)
+		for sec in self._conf_sections:
+			sec_pre = f'{sec}_'
+			for k in dir(self):
+				if not k.startswith(sec_pre): continue
+				v = getattr(self, k)
+				if isinstance(v, str): get_val = lambda *a: str(conf.get(*a))
+				elif isinstance(v, bool): get_val = conf.getboolean
+				elif isinstance(v, int): get_val = conf.getint
+				elif isinstance(v, float): get_val = conf.getfloat
+				else: continue
+				for kc in k, k.replace('_', '-'):
+					try: setattr(self, k, get_val(sec, kc[len(sec_pre):]))
+					except configparser.Error: pass
+					else: break
+
+	def pprint(self, title=None, empty_vals=False):
+		cat, chk = None, re.compile(
+			'^({})_(.*)$'.format('|'.join(map(re.escape, self._conf_sections))) )
+		if title: print(f';; {title}')
+		for k in self.__class__.__dict__.keys():
+			m = chk.search(k)
+			if not m: continue
+			v, cat_chk = getattr(self, k), m.group(1).replace('_', '-')
+			if cat_chk != cat:
+				cat = cat_chk
+				print(f'\n[{cat}]')
+			if isinstance(v, bool): v = ['no', 'yes'][v]
+			elif isinstance(v, int): v = int(v)
+			k, v = m.group(2).replace('_', '-'), str(v).replace('\t', '  ')
+			print(f'{k} = {v}')
 
 
 class ScrollerWindow(Gtk.ApplicationWindow):
@@ -144,19 +199,19 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def init_widgets(self):
 		css = Gtk.CssProvider()
-		css.load_from_data(self.conf.win_css.encode())
+		css.load_from_data(self.conf._win_css.encode())
 		Gtk.StyleContext.add_provider_for_screen(
 			Gdk.Screen.get_default(), css,
 			Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION )
 
-		self.dim_scroll_v = self.dim_scale_w = bool(self.conf.scroll_dir.value & 2) # up/down
-		self.dim_scroll_rev = not self.conf.scroll_dir.value & 1 # left/up
+		self.dim_scroll_v = self.dim_scale_w = bool(self.conf.scroll_direction.value & 2) # up/down
+		self.dim_scroll_rev = not self.conf.scroll_direction.value & 1 # left/up
 
 		self.scroll = Gtk.ScrolledWindow()
 		self.scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.ALWAYS)
 		self.add(self.scroll)
-		self.box = ( Gtk.VBox if self.dim_scroll_v
-			else Gtk.HBox )(spacing=self.conf.box_spacing, expand=True)
+		self.box = Gtk.VBox if self.dim_scroll_v else Gtk.HBox
+		self.box = self.box(spacing=self.conf.misc_box_spacing, expand=True)
 		self.scroll.add(self.box)
 		self.box_images, self.box_images_init = cs.deque(), True
 		self.ev_timers = dict()
@@ -177,8 +232,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		# self.scroll_adj_init = bool(self.dim_scroll_rev)
 		self.scroll_adj_image = None
 
-		hints = dict.fromkeys(self.conf.wm_hints_all)
-		hints.update(self.conf.wm_hints or dict())
+		hints = dict.fromkeys(self.conf._win_hints_all)
+		hints.update(self.conf.win_hints or dict())
 		for k in list(hints):
 			setter = getattr(self, f'set_{k}', None)
 			if not setter: setter = getattr(self, f'set_{k}_hint', None)
@@ -192,13 +247,13 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				continue
 			setter(v)
 		assert not hints, ['Unrecognized wm-hints:', hints]
-		self.set_type_hint(self.conf.wm_type_hints)
+		self.set_type_hint(self.conf.win_type_hints)
 
 		self.connect('composited-changed', self.set_visual_rgba)
 		self.connect('screen-changed', self.set_visual_rgba)
 		self.set_visual_rgba(self)
 
-		self.set_default_size(*self.conf.win_default_size)
+		self.set_default_size(*self.conf._win_size_default)
 		self.place_window_ev = None
 		self.place_window(self)
 		self.place_window_ev = self.connect('configure-event', self.place_window)
@@ -221,7 +276,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 	def ev_debounce(self, *ev_args, ev=None, cb=None):
 		self.ev_debounce_clear(ev)
 		self.ev_timers[ev] = GLib.timeout_add(
-			self.conf.event_delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
+			self.conf.misc_event_delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
 
 
 	def set_visual_rgba(self, w, *ev_data):
@@ -255,27 +310,35 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			self.log.debug('win-move: {} {}', wx, wy)
 			w.move(wx, wy)
 
-	def window_key(self, w, ev, _masks=dict()):
-		if not _masks:
+	_key_sums = _key_masks = None
+	def window_key(self, w, ev):
+		if not self._key_masks:
+			self._key_masks = dict()
 			for st, mod in Gdk.ModifierType.__flags_values__.items():
 				if ( len(mod.value_names) != 1
 					or not mod.first_value_nick.endswith('-mask') ): continue
-				assert st not in _masks, [mod.first_value_nick, _masks[st]]
+				assert st not in self._key_masks, [mod.first_value_nick, self._key_masks[st]]
 				mod = mod.first_value_nick[:-5]
 				if mod.startswith('modifier-reserved-'): mod = 'res-{}'.format(mod[18:])
-				_masks[st] = mod
+				self._key_masks[st] = mod
+		if not self._key_sums:
+			self._key_sums = dict()
+			for k, action in [
+					('quit', 'q'), *((f'scroll_{k.name}', k) for k in ScrollAdjust) ]:
+				self._key_sums[action] = list(filter( None,
+					map(str.strip, getattr(self.conf, f'keys_{k}').split(',')) ))
 		chk, keyval = ev.get_keyval()
 		if not chk: return
 		key_sum, key_name = list(), Gdk.keyval_name(keyval)
-		for st, mod in _masks.items():
+		for st, mod in self._key_masks.items():
 			if ev.state & st == st: key_sum.append(mod)
 		key_sum = ' '.join(sorted(key_sum) + [key_name]).lower()
 		self.log.debug('key-press-event: {!r}', key_sum)
-		# Key format is '[mod1 ...] key', with modifier keys alpha-sorted
-		if key_sum in ['q', 'control q', 'control w', 'escape']: self.app.quit()
-		elif key_sum == 'm': self.scroll_adjust(ScrollAdjust.faster)
-		elif key_sum == 'n': self.scroll_adjust(ScrollAdjust.slower)
-		elif key_sum in ['p', 'space']: self.scroll_adjust(ScrollAdjust.toggle)
+
+		for action, key_sums in self._key_sums.items():
+			if key_sum not in key_sums: continue
+			if action == 'q': self.app.quit()
+			elif isinstance(action, ScrollAdjust): self.scroll_adjust(action)
 
 
 	def scroll_update(self, adj, offset=None, repeat=False):
@@ -285,9 +348,10 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if offset:
 			pos = pos + offset
 			adj.set_value(self.dim_scroll_translate(pos, pos_max))
-		if ( pos >= pos_max * self.conf.queue_preload_at
-				and self.box_images and (sum( bool(img.displayed)
-					for img in self.box_images ) / len(self.box_images)) > self.conf.queue_preload_at ):
+		if ( pos >= pos_max * self.conf.scroll_queue_preload_at
+				and self.box_images and (
+				sum(bool(img.displayed) for img in self.box_images) / len(self.box_images)
+					> self.conf.scroll_queue_preload_at )):
 			pos += self.image_cycle()
 			adj.set_value(self.dim_scroll_translate(pos, pos_max))
 		# Check is to avoid expensive updates/reloads while window is resized
@@ -298,17 +362,17 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		'Adds/removes images and returns scroll position adjustment based on their size.'
 		offset = offset_rev = 0
 		image = ...
-		while image is ... or len(self.box_images) < self.conf.queue_size:
+		while image is ... or len(self.box_images) < self.conf.scroll_queue_size:
 			image = self.image_add()
 			if not image: break
 			if image.displayed: # delayed loading runs image_set_scroll on gtk event
 				offset_rev += self.dim_scroll_for_image(image.gtk)
-				offset_rev += self.conf.box_spacing
-		while len(self.box_images) > self.conf.queue_size:
+				offset_rev += self.conf.misc_box_spacing
+		while len(self.box_images) > self.conf.scroll_queue_size:
 			image = self.box_images.popleft()
 			offset += self.dim_scroll_for_image(image.gtk)
 			self.image_remove(image)
-			offset += self.conf.box_spacing
+			offset += self.conf.misc_box_spacing
 		offset = -(offset if not self.dim_scroll_rev else offset_rev)
 		return offset
 
@@ -352,7 +416,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if self.box_images_init:
 			self.box_images_init, init = False, True
 			init_sz = getattr(self.get_allocation(), self.dim_scroll) * 1.5
-			for n in range(self.conf.queue_size): self.image_add()
+			for n in range(self.conf.scroll_queue_size): self.image_add()
 
 		self.ev_debounce_clear('set-pixbufs')
 		sz = getattr(self.get_allocation(), self.dim_scale)
@@ -384,7 +448,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		w, h = ((sz, -1) if self.dim_scale_w else (-1, sz))
 		try:
 			buff, w, h, rs, alpha = self.pp.process_image_file(
-				image.path, w, h, int(self.conf.image_scale_algo), self.conf.image_brightness or 1.0 )
+				image.path, w, h, int(self.conf.image_scale_algo), self.conf.image_brightness )
 		except self.pp.error as err:
 			self.log.error('Failed to load/process image: {}', err)
 			image.pb_proc = False
@@ -423,17 +487,17 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		# This seem to cause some scroll-jumps, not sure why, maybe wrong gtk event?
 		offset = self.scroll_adj.get_value()
 		offset += self.dim_scroll_for_image(image.gtk)
-		offset += self.conf.box_spacing
+		offset += self.conf.misc_box_spacing
 		self.scroll_adj.set_value(offset)
 
 
 	def scroll_adjust(self, adj):
 		px, s = self.conf.scroll_auto or (0, 0)
-		adj_k = self.conf.scroll_adj_k
+		adj_k = self.conf.scroll_adjust_k
 
 		if adj is ScrollAdjust.toggle:
 			if self.scroll_timer: px = s = 0 # pause
-			elif not (px and s): px, s = self.conf.scroll_auto_key_start
+			elif not (px and s): px, s = self.conf._scroll_auto_key_start
 			else: s += 1e-6 # just to trigger change check below
 
 		elif adj is ScrollAdjust.faster:
@@ -466,8 +530,9 @@ class ScrollerApp(Gtk.Application):
 	def __init__(self, src_paths_iter, conf):
 		self.src_paths_iter, self.conf = src_paths_iter, conf
 		super().__init__()
-		if self.conf.app_id: self.set_application_id(self.conf.app_id.format(pid=os.getpid()))
-		if self.conf.no_session: self.set_property('register-session', False)
+		if self.conf.misc_app_id:
+			self.set_application_id(self.conf.misc_app_id.format(pid=os.getpid()))
+		if self.conf.misc_no_session: self.set_property('register-session', False)
 
 	def do_activate(self):
 		win = ScrollerWindow(self, self.src_paths_iter, self.conf)
@@ -577,20 +642,18 @@ def main(args=None, conf=None):
 			Number of images scrolling through a window and at which position
 				(0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.
 			Format is: count[:preload-theshold].
-			Examples: 4:0.8, 10:0.5, 5:0.9. Default: {conf.queue_size}:{conf.queue_preload_at}''')
+			Examples: 4:0.8, 10:0.5, 5:0.9. Default: {conf.scroll_queue_size}:{conf.scroll_queue_preload_at}''')
 	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]',
 		help='''
 			Auto-scroll by specified number
 				of pixels with specified interval (1s by defaul).''')
 
 	group = parser.add_argument_group('Appearance')
-	group.add_argument('-o', '--opacity',
-		type=float, metavar='0-1.0', default=1.0,
-		help='''
+	group.add_argument('-o', '--opacity', type=float, metavar='0-1.0',
+		help=f'''
 			Opacity of the window contents - float value in 0-1.0 range,
 				with 0 being fully-transparent and 1.0 fully opaque.
-			Should only have any effect with compositing Window Manager.
-			Default: %(default)s.''')
+			Should only have any effect with compositing Window Manager.''')
 	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)',
 		help='''
 			Set window size and/or position hints for WM (usually followed).
@@ -607,9 +670,8 @@ def main(args=None, conf=None):
 				S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.
 			"slop" tool - https://github.com/naelstrof/slop - can be used
 				used to get this value interactively via mouse selection (e.g. "-p $(slop)").''')
-	group.add_argument('-s', '--spacing',
-		type=int, metavar='px', default=conf.box_spacing,
-		help='Padding between images, in pixels. Default: %(default)spx.')
+	group.add_argument('-s', '--spacing', type=int, metavar='px',
+		help=f'Padding between images, in pixels. Default: {conf.misc_box_spacing}px.')
 	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)',
 		help='''
 			Comma or space-separated list of WM hints to set/unset for the window.
@@ -619,7 +681,7 @@ def main(args=None, conf=None):
 			List of recognized hints:
 				{}.
 			Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.'''\
-			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf.wm_hints_all), 75))))
+			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_hints_all), 75))))
 	group.add_argument('-t', '--wm-type-hints', metavar='hint(,...)',
 		help='''
 			Comma or space-separated list of window type hints for WM.
@@ -628,13 +690,28 @@ def main(args=None, conf=None):
 			List of recognized type-hints (all unset by default):
 				{}.
 			Probably does not make sense to use multiple of these at once.'''\
-			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf.wm_type_hints_all), 75))))
+			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_type_hints_all), 75))))
 	group.add_argument('-i', '--icon-name', metavar='icon',
 		help='''
 			Name of the XDG icon to use for the window.
 			Can be icon from a theme, one of the default gtk ones, and such.
 			See XDG standards for how this name gets resolved into actual file path.
 			Example: image-x-generic.''')
+
+	group = parser.add_argument_group('Configuration file options')
+	group.add_argument('-c', '--conf',
+		metavar='file', action='append',
+		help=f'''
+			Path of configuration file(s) to use.
+			Can be specified mutliple times to use multiple config files,
+				with values from the last one overriding earlier ones.
+			{conf._conf_file_name} is looked up in XDG_CONFIG_* paths by default.''')
+	group.add_argument('--conf-dump', action='store_true',
+		help='Print all configuration settings, which will be used with'
+			' currently detected (and/or specified) configuration file(s), and exit.')
+	group.add_argument('--conf-dump-defaults', action='store_true',
+		help='Print all default settings, which would be used'
+			' if no configuration file(s) were overriding these, and exit.')
 
 	group = parser.add_argument_group('Misc / debug')
 	group.add_argument('-n', '--no-register-session', action='store_true',
@@ -659,24 +736,20 @@ def main(args=None, conf=None):
 		level=logging.DEBUG if opts.debug else logging.WARNING )
 	log = get_logger('main')
 
-	if opts.brightness:
-		if opts.brightness == 1.0: opts.brightness = None
-		elif opts.brightness < 0: parser.error('-b/--brightness value must be >0')
-	if opts.scaling_interp:
-		algo = opts.scaling_interp.strip().lower()
-		if algo not in scale_algos:
-			if algo.isdigit():
-				try: algo = scale_algos[int(algo) - 1]
-				except: algo = None
-			else:
-				for a in scale_algos:
-					if not a.startswith(algo): continue
-					algo = a
-					break
-				else: algo = None
-			if not algo: parser.error(f'Unknown scaling interpolation value: {opts.scaling_interp}')
-			opts.scaling_interp = algo
-	if opts.dump_css: return print(conf.win_css.replace('\t', '  '), end='')
+	if opts.conf_dump_defaults:
+		conf.pprint('Default configuration options', empty_vals=True)
+		return
+
+	conf_user_paths = list(pl.Path(p).expanduser() for p in opts.conf or list())
+	for p in conf_user_paths:
+		if not os.access(p, os.R_OK):
+			parser.error(f'Specified config file is missing or inaccessible: {p}')
+	conf.update_from_files(*conf_user_paths)
+
+	if opts.conf_dump:
+		conf.pprint('Current configuration file(s) options')
+		return
+	if opts.dump_css: return print(conf._win_css.replace('\t', '  '), end='')
 
 	src_paths = opts.image_path or list()
 	if opts.file_list:
@@ -693,24 +766,42 @@ def main(args=None, conf=None):
 	elif opts.shuffle: src_paths_iter = shuffle_iter(file_iter(src_paths))
 	else: src_paths_iter = file_iter(src_paths)
 
-	if opts.auto_scroll:
-		try: px, s = map(float, opts.auto_scroll.split(':', 1))
-		except ValueError: px, s = float(opts.auto_scroll), 1
+	if opts.scaling_interp:
+		algo = opts.scaling_interp.strip().lower()
+		if algo not in scale_algos:
+			if algo.isdigit():
+				try: algo = scale_algos[int(algo) - 1]
+				except: algo = None
+			else:
+				for a in scale_algos:
+					if not a.startswith(algo): continue
+					algo = a
+					break
+				else: algo = None
+			if not algo: parser.error(f'Unknown scaling interpolation value: {opts.scaling_interp}')
+			opts.scaling_interp = algo
+
+	if opts.auto_scroll or conf.scroll_auto:
+		if opts.auto_scroll: conf.scroll_auto = opts.auto_scroll
+		try: px, s = map(float, conf.scroll_auto.split(':', 1))
+		except ValueError: px, s = float(conf.scroll_auto), 1
 		conf.scroll_auto = px, s
 
-	if opts.scroll_direction:
-		v_chk = opts.scroll_direction.strip().lower()
+	if opts.scroll_direction or conf.scroll_direction:
+		if opts.scroll_direction: conf.scroll_direction = opts.scroll_direction
+		v_chk = conf.scroll_direction.strip().lower()
 		for v in ScrollDirection:
 			if not v.name.startswith(v_chk): continue
-			conf.scroll_dir = v
+			conf.scroll_direction = v
 			break
-		else: parser.error(f'Unrecognized -d/--scroll-direction value: {opts.scroll_direction}')
+		else: parser.error(f'Unrecognized -d/--scroll-direction value: {conf.scroll_direction}')
 
-	if opts.pos:
+	if opts.pos or conf.win_pos:
+		if opts.pos: conf.win_pos = opts.pos
 		m = re.search(
 			r'^((?:M?\d+|S)(?:x(?:M?\d+|S))?)?'
-			r'([-+]M?\d+)?([-+]M?\d+)?$', opts.pos )
-		if not m: parser.error(f'Invalid size/position spec: {opts.pos!r}')
+			r'([-+]M?\d+)?([-+]M?\d+)?$', conf.win_pos )
+		if not m: parser.error(f'Invalid size/position spec: {conf.win_pos!r}')
 		size, x, y = m.groups()
 		size_fs = size if 'x' not in size else None
 		if size:
@@ -719,32 +810,42 @@ def main(args=None, conf=None):
 		if x: conf.win_x = x
 		if y: conf.win_y = y
 		if size_fs and not (x or y): conf.win_x = conf.win_y = size_fs
+
 	if opts.queue:
 		try: qs, q_pos = opts.queue.split(':', 1)
 		except ValueError: qs, q_pos = opts.queue, None
-		if qs: conf.queue_size = int(qs)
-		if q_pos: conf.queue_preload_at = float(q_pos)
-	if opts.wm_hints:
-		conf.wm_hints = dict(
+		if qs: conf.scroll_queue_size = int(qs)
+		if q_pos: conf.scroll_queue_preload_at = float(q_pos)
+
+	if opts.wm_hints or conf.win_hints:
+		if opts.wm_hints: conf.win_hints = opts.wm_hints
+		conf.win_hints = dict(
 			(hint.lstrip('+-'), not hint.startswith('-'))
-			for hint in opts.wm_hints.replace(',', ' ').split() )
-	if opts.wm_type_hints:
-		for k in opts.wm_type_hints.replace(',', ' ').split():
-			conf.wm_type_hints |= conf.wm_type_hints_all[k]
+			for hint in conf.win_hints.replace(',', ' ').split() )
+
+	if opts.wm_type_hints or conf.win_type_hints or True:
+		hints = opts.wm_type_hints or conf.win_type_hints
+		conf.win_type_hints = Gdk.WindowTypeHint.NORMAL
+		for k in hints.replace(',', ' ').split():
+			conf.win_type_hints |= conf._win_type_hints_all[k]
+
+	conf.image_scale_algo = getattr(
+		GdkPixbuf.InterpType, (opts.scaling_interp or conf.image_scale_algo).upper() )
 	if opts.icon_name: conf.win_icon = opts.icon_name
-	conf.box_spacing = opts.spacing
-	conf.image_opacity = opts.opacity
-	conf.image_brightness = opts.brightness
-	conf.image_scale_algo = getattr(GdkPixbuf.InterpType, opts.scaling_interp.upper())
-	conf.image_proc_threads = opts.proc_threads
-	conf.no_session = opts.no_register_session
-	if not opts.unique: conf.app_id += '.pid-{pid}'
+	if opts.spacing is not None: conf.misc_box_spacing = opts.spacing
+	if opts.opacity is not None: conf.image_opacity = opts.opacity
+	if opts.brightness is not None:
+		conf.image_brightness = opts.brightness
+		if opts.brightness < 0: parser.error('-b/--brightness value must be >0')
+	if opts.proc_threads is not None: conf.image_proc_threads = opts.proc_threads
+	if opts.no_register_session is not None: conf.misc_no_session = opts.no_register_session
+	if not opts.unique: conf.misc_app_id += '.pid-{pid}'
 
 	try:
 		import pixbuf_proc, threading, queue
 		conf.image_proc_module = pixbuf_proc, threading, queue
 	except ImportError:
-		if conf.image_brightness or conf.image_proc_threads:
+		if conf.image_brightness != 1.0 or conf.image_proc_threads:
 			parser.error( 'pixbuf_proc.so module cannot be loaded, but is required'
 				' with these options - build it from pixbuf_proc.c in same repo as this script' )
 	else:
