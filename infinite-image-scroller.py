@@ -97,12 +97,12 @@ class ScrollerConf:
 	scroll_queue_preload_at = 0.6
 	_scroll_auto_key_start = 1, 0.01
 
-	image_proc_module = False
 	image_proc_threads = 0
 	image_opacity = 1.0
 	image_brightness = 1.0
 	image_scale_algo = 'bilinear'
 	image_open_attempts = 3
+	_image_proc_module = None
 
 	# Key combos format is lowercase "[mod1 ...] key, ...", with modifier keys alpha-sorted
 	# Use --debug option to see which exact key-sums get pressed
@@ -180,7 +180,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			self.log.debug('Using icon: {}', self.conf.win_icon)
 			self.set_icon_name(self.conf.win_icon)
 
-		self.pp = self.conf.image_proc_module
+		self.pp = self.conf._image_proc_module
 		if self.pp:
 			self.pp, threading, queue = self.pp
 			self.thread_queue = queue.Queue()
@@ -837,7 +837,7 @@ def main(args=None, conf=None):
 
 	try:
 		import pixbuf_proc, threading, queue
-		conf.image_proc_module = pixbuf_proc, threading, queue
+		conf._image_proc_module = pixbuf_proc, threading, queue
 	except ImportError:
 		if conf.image_brightness != 1.0 or conf.image_proc_threads:
 			parser.error( 'pixbuf_proc.so module cannot be loaded, but is required'
