@@ -27,7 +27,8 @@ class LogStyleAdapter(logging.LoggerAdapter):
 
 get_logger = lambda name: LogStyleAdapter(logging.getLogger(name))
 
-dedent = lambda text: textwrap.dedent(text).strip('\n') + '\n'
+dd = lambda text: re.sub( r' \t+', ' ',
+	textwrap.dedent(text).strip('\n') + '\n' ).replace('\t', '  ')
 
 
 @dc.dataclass
@@ -70,7 +71,7 @@ class ScrollerConf:
 	win_hints = win_type_hints = ''
 
 	_win_size_default = 700, 500
-	_win_css = dedent('''
+	_win_css = dd('''
 		@binding-set image-scroller-keys {
 			bind "Up" { "scroll-child" (step-up, 0) };
 			bind "Down" { "scroll-child" (step-down, 0) };
@@ -572,156 +573,128 @@ def main(args=None, conf=None):
 	scale_algos = 'bilinear hyper nearest tiles'.split()
 
 	import argparse
-
-	class SmartHelpFormatter(argparse.HelpFormatter):
-		def __init__(self, *args, **kws):
-			return super().__init__(*args, **kws, width=100)
-		def _fill_text(self, text, width, indent):
-			if '\n' not in text: return super()._fill_text(text, width, indent)
-			return ''.join(indent + line for line in text.splitlines(keepends=True))
-		def _split_lines(self, text, width):
-			return ( super()._split_lines(text, width) if '\n' not in text
-				else dedent(re.sub(r'(?<=\S)\t+', ' ', text)).replace('\t', '  ').splitlines() )
-
 	parser = argparse.ArgumentParser(
-		formatter_class=SmartHelpFormatter,
+		formatter_class=argparse.RawTextHelpFormatter,
 		description='Display image-scroller window.')
 
 	group = parser.add_argument_group('Image sources')
-	group.add_argument('image_path', nargs='*',
-		help='''
-			Path to file(s) or directories
-				(will be searched recursively) to display images from.
-			All found files will be treated as images,
-				use e.g. find/grep/xargs for filename-based filtering.
-			If no paths are provided, current
-				directory is used by default. See also --file-list option.''')
-	group.add_argument('-f', '--file-list', metavar='path',
-		help='''
-			File with a list of image files/dirs paths to use, separated by newlines.
-			Can be a fifo or pipe, use "-" to read it from stdin.''')
-	group.add_argument('-r', '--shuffle', action='store_true',
-		help='''
-			Read full list of input images
-				(dont use infinite --file-list) and shuffle it.''')
-	group.add_argument('-l', '--loop', action='store_true',
-		help='''
-			Loop (pre-buffered) input list of images infinitely.
-			Will re-read any dirs in image_path on each loop cycle,
-				and reshuffle files if -r/--shuffle is also specified.''')
+	group.add_argument('image_path', nargs='*', help=dd('''
+		Path to file(s) or directories
+			(will be searched recursively) to display images from.
+		All found files will be treated as images,
+			use e.g. find/grep/xargs for filename-based filtering.
+		If no paths are provided, current
+			directory is used by default. See also --file-list option.'''))
+	group.add_argument('-f', '--file-list', metavar='path', help=dd('''
+		File with a list of image files/dirs paths to use, separated by newlines.
+		Can be a fifo or pipe, use "-" to read it from stdin.'''))
+	group.add_argument('-r', '--shuffle', action='store_true', help=dd('''
+		Read full list of input images
+			(dont use infinite --file-list) and shuffle it.'''))
+	group.add_argument('-l', '--loop', action='store_true', help=dd('''
+		Loop (pre-buffered) input list of images infinitely.
+		Will re-read any dirs in image_path on each loop cycle,
+			and reshuffle files if -r/--shuffle is also specified.'''))
 
 	group = parser.add_argument_group('Image processing')
 	group.add_argument('-z', '--scaling-interp',
-		default=scale_algos[0], metavar='algo', help=f'''
+		default=scale_algos[0], metavar='algo', help=dd(f'''
 			Interpolation algorithm to use to scale images to window size.
 			Supported ones: {", ".join(scale_algos)}. Default: %(default)s.
 			Can be specified by full name, prefix\
-				(e.g. "h" for "hyper") or digit (1={scale_algos[0]}).''')
-	group.add_argument('-b', '--brightness', type=float, metavar='float',
-		help='''
-			Adjust brightness of images before displaying them via HSP algorithm,
-				multiplying P by specified coefficient value (>1 - brighter, <1 - darker).
-			For more info on HSP, see http://alienryderflex.com/hsp.html
-			Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.''')
-	group.add_argument('-m', '--proc-threads', type=int, metavar='n',
-		help='''
-			Number of background threads to use for loading and processing images.
-			Requires pixbuf_proc.so module to be loaded if value is specified,
-				and otherwise defaults to 0, which will translate to CPU thread count.''')
+				(e.g. "h" for "hyper") or digit (1={scale_algos[0]}).'''))
+	group.add_argument('-b', '--brightness', type=float, metavar='float', help=dd('''
+		Adjust brightness of images before displaying them via HSP algorithm,
+			multiplying P by specified coefficient value (>1 - brighter, <1 - darker).
+		For more info on HSP, see http://alienryderflex.com/hsp.html
+		Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.'''))
+	group.add_argument('-m', '--proc-threads', type=int, metavar='n', help=dd('''
+		Number of background threads to use for loading and processing images.
+		Requires pixbuf_proc.so module to be loaded if value is specified,
+			and otherwise defaults to 0, which will translate to CPU thread count.'''))
 
 	group = parser.add_argument_group('Scrolling')
-	group.add_argument('-d', '--scroll-direction', metavar='direction',
-		help=f'''
-			Direction for scrolling - left, right, up, down (can be specified by prefix, e.g. "r").
-			This determines where scrollbar will be, how images will be scaled
-				(either to window width or height), -a/--auto-scroll direction, as well as
-				on which window side new images will be appended (when scrolling close to it).''')
-	group.add_argument('-q', '--queue',
-		metavar='count[:preload-thresh]',
-		help=f'''
-			Number of images scrolling through a window and at which position
-				(0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.
-			Format is: count[:preload-theshold].
-			Examples: 4:0.8, 10:0.5, 5:0.9. Default: {conf.scroll_queue_size}:{conf.scroll_queue_preload_at}''')
-	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]',
-		help='''
-			Auto-scroll by specified number
-				of pixels with specified interval (1s by defaul).''')
+	group.add_argument('-d', '--scroll-direction', metavar='direction', help=dd(f'''
+		Direction for scrolling - left, right, up, down (can be specified by prefix, e.g. "r").
+		This determines where scrollbar will be, how images will be scaled
+			(either to window width or height), -a/--auto-scroll direction, as well as
+			on which window side new images will be appended (when scrolling close to it).'''))
+	group.add_argument('-q', '--queue', metavar='count[:preload-thresh]', help=dd(f'''
+		Number of images scrolling through a window and at which position
+			(0-1.0 with 0 being "top" and 1.0 "bottom") to pick/load/insert new images.
+		Format is: count[:preload-theshold].
+		Examples: 4:0.8, 10:0.5, 5:0.9. Default: \
+			{conf.scroll_queue_size}:{conf.scroll_queue_preload_at}'''))
+	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]', help=dd('''
+		Auto-scroll by specified number
+			of pixels with specified interval (1s by defaul).'''))
 
 	group = parser.add_argument_group('Appearance')
-	group.add_argument('-o', '--opacity', type=float, metavar='0-1.0',
-		help=f'''
-			Opacity of the window contents - float value in 0-1.0 range,
-				with 0 being fully-transparent and 1.0 fully opaque.
-			Should only have any effect with compositing Window Manager.''')
-	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)',
-		help='''
-			Set window size and/or position hints for WM (usually followed).
-			W/H values can be special "S" to use screen size,
-				e.g. "SxS" (or just "S") is "fullscreen".
-			X/Y offsets must be specified in that order, if at all, with positive
-				values (prefixed with "+") meaning offset from top-left corner
-				of the screen, and negative - bottom-right.
-			Special values like "M1" (or M2, M3, etc) can
-				be used to specify e.g. monitor-1 width/heigth/offsets,
-				and if size is just "M1" or "M2", then x/y offsets default to that monitor too.
-			If not specified (default), all are left for Window Manager to decide/remember.
-			Examples: 800x600, -0+0 (move to top-right corner),
-				S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.
-			"slop" tool - https://github.com/naelstrof/slop - can be used
-				used to get this value interactively via mouse selection (e.g. "-p $(slop)").''')
+	group.add_argument('-o', '--opacity', type=float, metavar='0-1.0', help=dd(f'''
+		Opacity of the window contents - float value in 0-1.0 range,
+			with 0 being fully-transparent and 1.0 fully opaque.
+		Should only have any effect with compositing Window Manager.'''))
+	group.add_argument('-p', '--pos', metavar='(WxH)(+X)(+Y)', help=dd('''
+		Set window size and/or position hints for WM (usually followed).
+		W/H values can be special "S" to use screen size,
+			e.g. "SxS" (or just "S") is "fullscreen".
+		X/Y offsets must be specified in that order, if at all, with positive
+			values (prefixed with "+") meaning offset from top-left corner
+			of the screen, and negative - bottom-right.
+		Special values like "M1" (or M2, M3, etc) can
+			be used to specify e.g. monitor-1 width/heigth/offsets,
+			and if size is just "M1" or "M2", then x/y offsets default to that monitor too.
+		If not specified (default), all are left for Window Manager to decide/remember.
+		Examples: 800x600, -0+0 (move to top-right corner),
+			S (full screen), 200xS+0, M2 (full monitor 2), M2+M1, M2x500+M1+524.
+		"slop" tool - https://github.com/naelstrof/slop - can be used
+			used to get this value interactively via mouse selection (e.g. "-p $(slop)").'''))
 	group.add_argument('-s', '--spacing', type=int, metavar='px',
 		help=f'Padding between images, in pixels. Default: {conf.misc_box_spacing}px.')
-	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)',
-		help='''
-			Comma or space-separated list of WM hints to set/unset for the window.
-			All of these can have boolean yes/no or unspecified/default values.
-			Specifying hint name in the list will have it explicity set (i.e. "yes/true" value),
-				and preceding name with "-" will have it explicitly unset instead ("no/false").
-			List of recognized hints:
-				{}.
-			Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.'''\
-			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_hints_all), 75))))
-	group.add_argument('-t', '--wm-type-hints', metavar='hint(,...)',
-		help='''
-			Comma or space-separated list of window type hints for WM.
-			Similar to --wm-hints in general, but are
-				combined separately to set window type hint value.
-			List of recognized type-hints (all unset by default):
-				{}.
-			Probably does not make sense to use multiple of these at once.'''\
-			.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_type_hints_all), 75))))
-	group.add_argument('-i', '--icon-name', metavar='icon',
-		help='''
-			Name of the XDG icon to use for the window.
-			Can be icon from a theme, one of the default gtk ones, and such.
-			See XDG standards for how this name gets resolved into actual file path.
-			Example: image-x-generic.''')
+	group.add_argument('-x', '--wm-hints', metavar='(+|-)hint(,...)', help=dd('''
+		Comma or space-separated list of WM hints to set/unset for the window.
+		All of these can have boolean yes/no or unspecified/default values.
+		Specifying hint name in the list will have it explicity set (i.e. "yes/true" value),
+			and preceding name with "-" will have it explicitly unset instead ("no/false").
+		List of recognized hints:
+			{}.
+		Example: keep_top -decorated skip_taskbar skip_pager -accept_focus.'''\
+		.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_hints_all), 75)))))
+	group.add_argument('-t', '--wm-type-hints', metavar='hint(,...)', help=dd('''
+		Comma or space-separated list of window type hints for WM.
+		Similar to --wm-hints in general, but are
+			combined separately to set window type hint value.
+		List of recognized type-hints (all unset by default):
+			{}.
+		Probably does not make sense to use multiple of these at once.'''\
+		.format('\n\t\t\t\t'.join(textwrap.wrap(', '.join(conf._win_type_hints_all), 75)))))
+	group.add_argument('-i', '--icon-name', metavar='icon', help=dd('''
+		Name of the XDG icon to use for the window.
+		Can be icon from a theme, one of the default gtk ones, and such.
+		See XDG standards for how this name gets resolved into actual file path.
+		Example: image-x-generic.'''))
 
 	group = parser.add_argument_group('Configuration file options')
-	group.add_argument('-c', '--conf',
-		metavar='file', action='append',
-		help=f'''
-			Path of configuration file(s) to use.
-			Can be specified mutliple times to use multiple config files,
-				with values from the last one overriding earlier ones.
-			{conf._conf_file_name} is looked up in XDG_CONFIG_* paths by default.''')
-	group.add_argument('--conf-dump', action='store_true',
-		help='Print all configuration settings, which will be used with'
-			' currently detected (and/or specified) configuration file(s), and exit.')
-	group.add_argument('--conf-dump-defaults', action='store_true',
-		help='Print all default settings, which would be used'
-			' if no configuration file(s) were overriding these, and exit.')
+	group.add_argument('-c', '--conf', metavar='file', action='append', help=dd(f'''
+		Path of configuration file(s) to use.
+		Can be specified mutliple times to use multiple config files,
+			with values from the last one overriding earlier ones.
+		{conf._conf_file_name} is looked up in XDG_CONFIG_* paths by default.'''))
+	group.add_argument('--conf-dump', action='store_true', help=dd('''
+		Print all configuration settings, which will be used with
+			currently detected (and/or specified) configuration file(s), and exit.'''))
+	group.add_argument('--conf-dump-defaults', action='store_true', help=dd('''
+		Print all default settings, which would be used'
+			if no configuration file(s) were overriding these, and exit.'''))
 
 	group = parser.add_argument_group('Misc / debug')
-	group.add_argument('-n', '--no-register-session', action='store_true',
-		help='''
-			Do not try register app with any session manager.
-			Can be used to get rid of Gtk-WARNING messages
-				about these and to avoid using dbus, but not sure how/if it actually works.''')
-	group.add_argument('-u', '--unique', action='store_true',
-		help='Force application uniqueness via GTK application_id.'
-			' I.e. exit immediately if another app instance is already running.')
+	group.add_argument('-n', '--no-register-session', action='store_true', help=dd('''
+		Do not try register app with any session manager.
+		Can be used to get rid of Gtk-WARNING messages
+			about these and to avoid using dbus, but not sure how/if it actually works.'''))
+	group.add_argument('-u', '--unique', action='store_true', help=dd('''
+		Force application uniqueness via GTK application_id.
+			I.e. exit immediately if another app instance is already running.'''))
 	group.add_argument('--dump-css', action='store_true',
 		help='Print css that is used for windows by default and exit.')
 	group.add_argument('--debug', action='store_true', help='Verbose operation mode.')
