@@ -5,10 +5,12 @@ import pixbuf_proc as pp
 
 
 def image_pixbuf_proc_thread(count, image_files):
-	w, h, interp_type, brightness_adj = 1920, 1080, 2, 1.0 # 2=BILINEAR
+	w, h, interp_type, = 1920, 1080, 2 # 2=BILINEAR
+	br_adj, br_adj_adapt, br_adj_dir = 1.0, 0, 0
 	while True:
 		for path in image_files:
-			buff, w, h, rs, alpha = pp.process_image_file(path, w, h, interp_type, brightness_adj)
+			buff, w, h, rs, alpha = pp.process_image_file(
+				path, w, h, interp_type, br_adj, br_adj_adapt, br_adj_dir )
 			count[0] += 1
 
 

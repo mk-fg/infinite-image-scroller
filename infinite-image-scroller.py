@@ -54,6 +54,8 @@ class ScrollDirection(enum.IntEnum):
 
 ScrollAdjust = enum.Enum('ScrollAdjust', 'slower faster toggle')
 
+BrightnessAdaptDir = enum.IntEnum('BrightnessAdapt', 'both up down')
+
 
 class ScrollerConf:
 
@@ -101,6 +103,9 @@ class ScrollerConf:
 	image_proc_threads = 0
 	image_opacity = 1.0
 	image_brightness = 1.0
+	image_brightness_adapt = ''
+	_image_brightness_adapt_k = 0.0
+	_image_brightness_adapt_dir = BrightnessAdaptDir.both
 	image_scale_algo = 'bilinear'
 	image_open_attempts = 3
 	_image_proc_module = None
@@ -449,7 +454,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		w, h = ((sz, -1) if self.dim_scale_w else (-1, sz))
 		try:
 			buff, w, h, rs, alpha = self.pp.process_image_file(
-				image.path, w, h, int(self.conf.image_scale_algo), self.conf.image_brightness )
+				image.path, w, h, int(self.conf.image_scale_algo), self.conf.image_brightness,
+				int(self.conf._image_brightness_adapt_dir), self.conf._image_brightness_adapt_k )
 		except self.pp.error as err:
 			self.log.error('Failed to load/process image: {}', err)
 			image.pb_proc = False
@@ -607,6 +613,13 @@ def main(args=None, conf=None):
 		Adjust brightness of images before displaying them via HSP algorithm,
 			multiplying P by specified coefficient value (>1 - brighter, <1 - darker).
 		For more info on HSP, see http://alienryderflex.com/hsp.html
+		Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.'''))
+	group.add_argument('-B', '--brightness-adapt', metavar='(+/-)(0-1.0)', help=dd('''
+		Dynamically adjust brightness of each image if average (median)
+			HSP pixel brightness value is below specified argument within 0-1 range.
+		Adjustment is done before -b/--brightness,
+			and uses "target / average" coefficient for each pixel.
+		Value can be prefixed by + or - to only adjust brightness in one direction (+/up, -/down).
 		Requires compiled pixbuf_proc.so module importable somewhere, e.g. same dir as script.'''))
 	group.add_argument('-m', '--proc-threads', type=int, metavar='n', help=dd('''
 		Number of background threads to use for loading and processing images.
@@ -803,18 +816,28 @@ def main(args=None, conf=None):
 	if opts.opacity is not None: conf.image_opacity = opts.opacity
 	if opts.brightness is not None:
 		conf.image_brightness = opts.brightness
-		if opts.brightness < 0: parser.error('-b/--brightness value must be >0')
+		if conf.image_brightness < 0: parser.error('-b/--brightness value must be >0')
 	if opts.proc_threads is not None: conf.image_proc_threads = opts.proc_threads
 	if opts.no_register_session is not None: conf.misc_no_session = opts.no_register_session
 	if not opts.unique: conf.misc_app_id += '.pid-{pid}'
+
+	if opts.brightness_adapt: conf.image_brightness_adapt = opts.brightness_adapt
+	if ba := conf.image_brightness_adapt:
+		conf._image_brightness_adapt_k = abs(float(ba))
+		conf._image_brightness_adapt_dir = \
+			BrightnessAdaptDir[{'-': 'down', '+': 'up'}.get(ba[0], 'both')]
+		if conf._image_brightness_adapt_k > 1:
+			parser.error('-B/--brightness-adapt value without prefix must be in 0-1.0 range')
+	else: conf._image_brightness_adapt_k = conf._image_brightness_adapt_dir = 0
 
 	try:
 		import pixbuf_proc, threading, queue
 		conf._image_proc_module = pixbuf_proc, threading, queue
 	except ImportError:
-		if conf.image_brightness != 1.0 or conf.image_proc_threads:
+		if ( conf.image_brightness != 1.0 or
+				conf._image_brightness_adapt_k or conf.image_proc_threads ):
 			parser.error( 'pixbuf_proc.so module cannot be loaded, but is required'
-				' with these options - build it from pixbuf_proc.c in same repo as this script' )
+				' with specified options - build it from pixbuf_proc.c in same repo as this script' )
 	else:
 		if not conf.image_proc_threads: conf.image_proc_threads = os.cpu_count()
 

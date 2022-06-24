@@ -94,25 +94,52 @@ void HSPtoRGB(
 
 static PyObject *pp_error;
 
+#define PP_BA_BOTH 1
+#define PP_BA_UP 2
+#define PP_BA_DOWN 3
+
+int pp_qsort_comp(const void *va, const void *vb) {
+	double a = *(double *) va; double b = *(double *) vb;
+	return a < b ? -1 : a > b ? 1 : 0; }
+
 void pp_brightness( unsigned char *buff,
-		unsigned int buff_len, double k, int alpha ) {
-	if (k == 1.0) return;
+		unsigned int buff_len, int alpha, double k, int ad, double ak ) {
+	if (k == 1.0 && ak <= 0) return;
 	double r, g, b, h, s, p;
 	unsigned char *end = buff + buff_len;
+	int buff_step = alpha ? 4 : 3;
+
+	if (ak > 0) {
+		// Calcs median (average) of sc evenly-sampled pixels
+		int sc = 1000, sn = 0, sp = sc / 2, ss = buff_len / buff_step;
+		if (sc < ss) ss = round(ss / sc);
+		else { sp = ss / 2; ss = buff_step; }
+		double pk, pks[sc]; unsigned char *bs = buff;
+		while (sn < sc && bs < end) {
+			RGBtoHSP(bs[0], bs[1], bs[2], &h, &s, &p);
+			pks[sn++] = p / 255; bs += ss; }
+		qsort(pks, sc, sizeof(pk), pp_qsort_comp);
+		pk = pks[sp];
+		ak = ( ad == PP_BA_BOTH
+			|| (ad == PP_BA_UP && pk < ak)
+			|| (ad == PP_BA_DOWN && pk > ak) ) ? ak / pk : 0; }
+
 	while (buff < end) {
 		r = buff[0]; g = buff[1]; b = buff[2];
 		RGBtoHSP(r, g, b, &h, &s, &p);
+		if (ak) p *= ak;
 		p *= k;
 		HSPtoRGB(h, s, p, &r, &g, &b);
 		buff[0] = r; buff[1] = g; buff[2] = b;
-		buff += alpha ? 4 : 3; }
+		buff += buff_step; }
 }
 
 static PyObject *
 pp_process_image_file(PyObject *self, PyObject *args) {
 	char *path; int w, h, scale_interp; double brightness_k;
-	if (!PyArg_ParseTuple( args, "siiid",
-		&path, &w, &h, &scale_interp, &brightness_k )) return NULL;
+	int brightness_ad = 0; double brightness_ak = 0;
+	if (!PyArg_ParseTuple( args, "siiidid", &path, &w, &h,
+		&scale_interp, &brightness_k, &brightness_ad, &brightness_ak )) return NULL;
 
 	char *err = NULL; int err_n = 0;
 
@@ -149,7 +176,8 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 
 	if (pb_rs) {
 		buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
-		pp_brightness(buff, buff_len, brightness_k, pb_alpha); }
+		pp_brightness( buff, buff_len, pb_alpha,
+			brightness_k, brightness_ad, brightness_ak ); }
 
 	if (pb_w != w || pb_h != h) {
 		pb_old = pb; pb_w = w; pb_h = h;
@@ -160,7 +188,8 @@ pp_process_image_file(PyObject *self, PyObject *args) {
 
 	if (!pb_rs) {
 		if (!buff) buff = gdk_pixbuf_get_pixels_with_length(pb, &buff_len);
-		pp_brightness(buff, buff_len, brightness_k, pb_alpha); }
+		pp_brightness( buff, buff_len, pb_alpha,
+			brightness_k, brightness_ad, brightness_ak ); }
 
 	pb_rs = gdk_pixbuf_get_rowstride(pb);
 

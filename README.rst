@@ -19,8 +19,8 @@ Needs Python-3.x, GTK3_ and PyGObject_ to run.
 These tend to come pre-installed on desktop linuxes.
 
 There's also optional pixbuf_proc.c module which would need gcc and gtk headers
-to build, and allows to load/scale/process images asynchronously in background
-threads without stuttering.
+to build, and allows to load/scale images efficiently and asynchronously in
+background threads without stuttering and image brightness adjustment.
 
 Aimed to be rather simple and straightforward, not a full-fledged image viewer.
 
@@ -139,8 +139,8 @@ Other non-window keys can be changed via ini configuration file.
 Image processing
 ````````````````
 
-When using -b/--brightness option to apply pixel-level processing to images,
-helper pixbuf_proc.so C-API module has to be compiled::
+When using -b/--brightness and -B/--brightness-adapt options to apply pixel-level
+processing to images, helper pixbuf_proc.so C-API module has to be compiled::
 
   gcc -O2 -fpic --shared `python3-config --includes` \
     `pkg-config --libs --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
