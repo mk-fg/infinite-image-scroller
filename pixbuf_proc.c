@@ -1,6 +1,7 @@
 //
-// Python C-API module to modify
+// Python C-API module to load and modify
 //  image buffer in-place for brightness and such adjustments.
+// Releases GIL during its processing to allow running in parallel threads easily.
 //
 // Build with:
 //  gcc -O2 -fpic --shared `python3-config --includes` \
@@ -9,12 +10,13 @@
 // Usage:
 //  import pixbuf_proc
 //  buff, w, h, rs, alpha = pixbuf_proc\
-//    .process_image_file(path, max_w, max_h, scale_interp, brightness_k)
+//    .process_image_file(path, max_w, max_h, scale_interp, brightness-opts...)
 //  pb = GdkPixbuf.Pixbuf.new_from_data(
 //    buff, GdkPixbuf.Colorspace.RGB, alpha, 8, w, h, rs )
 //
+// See also pixbuf_proc_loop.py for a simple usage example.
 
-#define __STDC_WANT_LIB_EXT2__ 1
+#define __STDC_WANT_LIB_EXT2__ 1 // for asprintf
 #include <stdio.h>
 #include <math.h>
 
