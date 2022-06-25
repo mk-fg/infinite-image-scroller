@@ -20,7 +20,7 @@ These tend to come pre-installed on desktop linuxes.
 
 There's also optional pixbuf_proc.c module which would need gcc and gtk headers
 to build, and allows to load/scale images efficiently and asynchronously in
-background threads without stuttering and image brightness adjustment.
+background threads without stuttering, as well as image brightness adjustment.
 
 Aimed to be rather simple and straightforward, not a full-fledged image viewer.
 
@@ -72,7 +72,7 @@ See ``./infinite-image-scroller.py --help`` for full list of available options.
 
 
 Appearance
-``````````
+----------
 
 `GTK3 CSS`_ (e.g. ``~/.config/gtk-3.0/gtk.css``) can be used to style app window
 somewhat and also to define new key bindings there.
@@ -107,7 +107,7 @@ stuff related to WM-side decorations like title bar, borders, icon, etc.
 
 
 Key bindings
-````````````
+------------
 
 Default keybindings are:
 
@@ -137,10 +137,11 @@ Other non-window keys can be changed via ini configuration file.
 
 
 Image processing
-````````````````
+----------------
 
-When using -b/--brightness and -B/--brightness-adapt options to apply pixel-level
-processing to images, helper pixbuf_proc.so C-API module has to be compiled::
+When using ``-b/--brightness`` and ``-B/--brightness-adapt`` options to apply
+pixel-level processing to images, small helper pixbuf_proc.so C-API module
+implementing that has to be compiled::
 
   gcc -O2 -fpic --shared `python3-config --includes` \
     `pkg-config --libs --cflags gtk+-3.0` pixbuf_proc.c -o pixbuf_proc.so
@@ -148,36 +149,37 @@ processing to images, helper pixbuf_proc.so C-API module has to be compiled::
 Can be left in the same dir as the main script or PYTHONPATH anywhere.
 
 Not using PIL/pillow module because simple R/G/B multiplication it uses for this
-stuff is suboptimal, and GIL prevents using background threads for such processing.
+stuff was very slow/suboptimal, and python GIL prevents using background threads
+for such processing.
 
 
 Performance
-```````````
+-----------
 
-When scrolling large-enough images, synchronous loading (esp. from non-local
-filesystem) and resizing (for high-res pics in particular) can cause
-stuttering, blocking GUI operation while it happens.
+When scrolling large-enough images, synchronous loading (esp. from
+non-local filesystem) and resizing (for high-res pics in particular)
+can cause stuttering, blocking GUI operation while it happens.
 
 Bundled pixbuf_proc.so helper module tries to address that as well,
 by loading/scaling images in a separate background non-GIL-locked threads,
 and will be auto-imported if it's available.
 
-See "Image processing" section above for how to build it.
+See `Image processing`_ section above for how to build it.
 
 
 Configuration File(s)
-`````````````````````
+---------------------
 
-Script will load any "infinite-image-scroller.ini" configuration file(s)
-from any of the $XDG_CONFIG_DIRS, $XDG_CONFIG_HOME, ~/.config directories,
-or any files specified with -c/--conf option directly, in that order.
+Script will load any "infinite-image-scroller.ini" configuration file(s) from
+any of the $XDG_CONFIG_DIRS, $XDG_CONFIG_HOME, ``~/.config`` directories,
+or any files specified with ``-c/--conf`` option directly, in that order.
 
 All sections and parameters in these are optional.
 Values in later files will override earlier ones.
 
-Run script with --conf-dump option to print resulting configuration
-(after loading all existing/specified files),
-or --conf-dump-defaults to see default configuration.
+Run script with ``--conf-dump`` option to print resulting configuration
+(after loading all existing/specified files), or ``--conf-dump-defaults``
+to see default configuration.
 
 Command-line parameters always override config files.
 
