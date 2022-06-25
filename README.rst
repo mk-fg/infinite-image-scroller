@@ -41,7 +41,7 @@ Some simple usage examples::
 
   % ./infinite-image-scroller.py image1.jpg image2.jpg image3.jpg
   % ./infinite-image-scroller.py --loop --shuffle path/to/my-image-dir
-  % ./infinite-image-scroller.py -rla 5:0.01 --pause-on-image 5 /mnt/my-images/
+  % ./infinite-image-scroller.py -s0 -dl -a 5:0.01 --pause-on-image 5 /mnt/my-images/
 
 Can also read a list or an endless feed of paths (files/dirs) from a
 newline-separated list-file or stdin::

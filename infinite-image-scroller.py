@@ -269,7 +269,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.connect( 'configure-event',
 			ft.partial(self.ev_debounce, ev='set-pixbufs', cb=self.image_set_pixbufs) )
 
-		self.scroll_timer = None
+		self.scroll_timer = self.scroll_linger_last = None
 		if self.conf.scroll_auto: self.scroll_adjust(ScrollAdjust.toggle)
 
 
@@ -358,8 +358,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		pos = self.dim_scroll_translate(adj.get_value(), pos_max)
 
 		if offset:
-			if ( self.conf.scroll_pause and
-					self.scroll_timer and (oc := self.image_at_center(offset * 2)) ):
+			if ( self.conf.scroll_pause and self.scroll_timer
+					and (oc := self.image_at_center(offset)) is not None ):
 				offset = oc
 				self.scroll_adjust(ScrollAdjust.toggle)
 				self.ev_delay( 'scroll-pause',
@@ -379,14 +379,22 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def image_at_center(self, offset_max):
 		'Gets offset-from-win-center of next image about to be there or None.'
-		offset_win = getattr(self.get_allocation(), self.dim_scroll) / 2
-		for image in self.box_images:
-			if not (image.displayed and image.gtk): continue
+		images = list(img for img in self.box_images if img.displayed and img.gtk)
+		if not images: return
+		sz_win = getattr(self.get_allocation(), self.dim_scroll)
+		for image in images:
 			pos = image.gtk.translate_coordinates(self.scroll, 0, 0)
-			if not pos: continue # not realized yet
-			offset = pos[1] - (offset_win - image.sz_scroll/2)
-			if offset < 0: continue # moved past center
-			if offset < offset_max: return offset + 1 # found it
+			if not pos or (pos := pos[self.dim_scroll_n]) == -1: continue # not realized yet
+			if self.dim_scroll_rev: pos = (sz_win - image.sz_scroll) - pos
+			offset = pos - (sz_win/2 - image.sz_scroll/2)
+			if offset < 0:
+				if not self.scroll_linger_last: # linger on first image
+					self.scroll_linger_last = image
+					return 0
+				continue # moved past center - ignore
+			if offset < offset_max and self.scroll_linger_last is not image:
+				self.scroll_linger_last = image
+				return offset
 			return # only need to check first image with offset>0
 
 	def image_cycle(self):
@@ -670,6 +678,7 @@ def main(args=None, conf=None):
 		help='Auto-scroll by specified number of pixels with specified interval (1s by default).')
 	group.add_argument('-P', '--pause-on-image', type=float, metavar='seconds', help=dd('''
 		Pause for specified number of seconds when each image is centered in the window.
+		Only makes sense with -a/--auto-scroll option enabled.
 		Depending on image/window dimensions, it might fit or be cut-off at the top and bottom.
 		Use exact same image/window aspect ratio to have this create a kind of rolling slideshow.'''))
 
