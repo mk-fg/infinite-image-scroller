@@ -41,7 +41,7 @@ Some simple usage examples::
 
   % ./infinite-image-scroller.py image1.jpg image2.jpg image3.jpg
   % ./infinite-image-scroller.py --loop --shuffle path/to/my-image-dir
-  % ./infinite-image-scroller.py -s0 -dl -a 5:0.01 --pause-on-image 5 /mnt/my-images/
+  % ./infinite-image-scroller.py -s0 -dr -a 5:0.01 --pause-on-image 5 /mnt/my-images/
 
 Can also read a list or an endless feed of paths (files/dirs) from a
 newline-separated list-file or stdin::
@@ -65,7 +65,7 @@ Or borderless window on whole second monitor::
 
   % ./infinite-image-scroller.py -p M2 -x=-decorated -a 10:0.05 /mnt/images/
 
-(transparency options should only work with compositing WM though)
+(transparency options should only work with compositing WMs though)
 
 See ``./infinite-image-scroller.py --help`` for full list of available options.
 
@@ -107,6 +107,26 @@ stuff related to WM-side decorations like title bar, borders, icon, etc.
 .. _GtkInspector: https://wiki.gnome.org/Projects/GTK%2B/Inspector
 
 
+Configuration File(s)
+---------------------
+
+Script will load any "infinite-image-scroller.ini" configuration file(s) from
+any of the $XDG_CONFIG_DIRS, $XDG_CONFIG_HOME, ``~/.config`` directories,
+or any files specified with ``-c/--conf`` option directly, in that order.
+
+All sections and parameters in these are optional.
+Values in later files will override earlier ones.
+
+Special "-" (dash) value can be used to disable looking up configs in any
+of the default dirs above, and only use specified one(s) and cli options.
+
+Run script with ``--conf-dump`` option to print resulting configuration
+(after loading all existing/specified files), or ``--conf-dump-defaults``
+to see default configuration.
+
+Command-line parameters always override config files.
+
+
 Key bindings
 ------------
 
@@ -134,7 +154,12 @@ Example - add Vi keybindings for scrolling in this window
     -gtk-key-bindings: image-scroller-keys;
   }
 
-Other non-window keys can be changed via ini configuration file.
+Other non-window keys can be changed via ini configuration file,
+in ``[keys]`` section.
+
+Mouse clicks print image paths to stdout by default.
+Format of those lines can be set via "click-print-format" ini option,
+or empty value there will disable this output.
 
 
 Image processing
@@ -168,27 +193,6 @@ and will be auto-imported if it's available.
 See `Image processing`_ section above for how to build it.
 
 
-Configuration File(s)
----------------------
-
-Script will load any "infinite-image-scroller.ini" configuration file(s) from
-any of the $XDG_CONFIG_DIRS, $XDG_CONFIG_HOME, ``~/.config`` directories,
-or any files specified with ``-c/--conf`` option directly, in that order.
-
-All sections and parameters in these are optional.
-Values in later files will override earlier ones.
-
-Special "-" (dash) value can be used to disable looking up configs in any
-of the default dirs above, and only use specified one(s) and cli options.
-
-Run script with ``--conf-dump`` option to print resulting configuration
-(after loading all existing/specified files), or ``--conf-dump-defaults``
-to see default configuration.
-
-Command-line parameters always override config files.
-
-
-
 Potential TODOs
 ---------------
 
@@ -198,4 +202,4 @@ Potential TODOs
 
 - Load stuff when manually scrolling in either direction, not just one.
 
-- 2d grid mode.
+- 2d grid layout mode.

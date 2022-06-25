@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import itertools as it, operator as op, functools as ft
+import itertools as it, operator as op, functools as ft, datetime as dt
 import pathlib as pl, collections as cs, dataclasses as dc
 import os, sys, re, logging, enum, textwrap, random, signal
 
@@ -56,13 +56,18 @@ class ScrollDirection(enum.IntEnum):
 ScrollAdjust = enum.Enum('ScrollAdjust', 'slower faster toggle')
 BrightnessAdaptDir = enum.IntEnum('BrightnessAdapt', 'both up down')
 
+class ISODT:
+	def __init__(self): self.dt = dt.datetime.now()
+	def __getattr__(self, k): return self.dt.isoformat(' ', k)
+	def __getitem__(self, k): return self.dt.strftime(k)
+
 
 class ScrollerConf:
 
 	misc_app_id = 'net.fraggod.infinite-image-scroller'
 	misc_no_session = False
 	misc_box_spacing = 3
-	misc_event_delay = 0.2 # debounce delay for scrolling and window resizing
+	misc_event_delay = 0.2 # debounce delay for scrolling, window resizing, clicks and such
 
 	win_title = 'infinite-image-scroller'
 	win_role = 'scroller-main'
@@ -94,7 +99,7 @@ class ScrollerConf:
 		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
 
 	scroll_direction = 'down'
-	scroll_auto = '' # (px, interval)
+	scroll_auto = '' # px:interval
 	scroll_adjust_k = 2
 	scroll_pause = 0.0
 	scroll_queue_size = 10
@@ -104,7 +109,7 @@ class ScrollerConf:
 	image_proc_threads = 0
 	image_opacity = 1.0
 	image_brightness = 1.0
-	image_brightness_adapt = ''
+	image_brightness_adapt = '' # [+/-](0-1.0)
 	_image_brightness_adapt_k = 0.0
 	_image_brightness_adapt_dir = BrightnessAdaptDir.both
 	image_scale_algo = 'bilinear'
@@ -117,6 +122,8 @@ class ScrollerConf:
 	keys_scroll_faster = 'm'
 	keys_scroll_slower = 'n'
 	keys_scroll_toggle = 'p, space'
+	keys_click_print_format = '[{isodt.seconds}] {image.path}' # vars: n, isodt, image
+	_keys_click_n = 0
 
 	_conf_sections = 'misc', 'win', 'wm', 'scroll', 'image', 'keys'
 	_conf_file_name = 'infinite-image-scroller.ini'
@@ -268,6 +275,9 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 		self.connect( 'configure-event',
 			ft.partial(self.ev_debounce, ev='set-pixbufs', cb=self.image_set_pixbufs) )
+		if self.conf.keys_click_print_format:
+			self.connect( 'button-press-event', lambda w, ev:
+				self.ev_debounce(ev.x, ev.y, ev='click', cb=self.image_click, now=True) )
 
 		self.scroll_timer = self.scroll_linger_last = None
 		if self.conf.scroll_auto: self.scroll_adjust(ScrollAdjust.toggle)
@@ -279,14 +289,17 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if timer is not None: GLib.source_remove(timer)
 	def ev_debounce_cb(self, ev, cb, ev_args):
 		self.ev_timers.pop(ev, None)
-		cb(*ev_args)
-	def ev_debounce(self, *ev_args, ev=None, cb=None, delay=None):
+		if cb: cb(*ev_args)
+	def ev_debounce(self, *ev_args, ev=None, cb=None, delay=None, now=False):
+		'Delay and/or prevent repeated events.'
+		if not now: self.ev_debounce_clear(ev)
+		elif ev in self.ev_timers: return
+		else: cb(*ev_args); cb = None
 		if delay is None: delay = self.conf.misc_event_delay
-		self.ev_debounce_clear(ev)
 		self.ev_timers[ev] = GLib.timeout_add(
 			delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
-	def ev_delay(self, ev, delay, cb, *ev_args):
-		self.ev_debounce(*ev_args, ev=ev, cb=cb, delay=delay)
+	def ev_delay(self, ev, delay, cb, *ev_args, **debounce_kws):
+		self.ev_debounce(*ev_args, ev=ev, cb=cb, delay=delay, **debounce_kws)
 
 
 	def set_visual_rgba(self, w, *ev_data):
@@ -381,7 +394,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		'Gets offset-from-win-center of next image about to be there or None.'
 		images = list(img for img in self.box_images if img.displayed and img.gtk)
 		if not images: return
-		sz_win = getattr(self.get_allocation(), self.dim_scroll)
+		sz_win = getattr(self.scroll.get_allocation(), self.dim_scroll)
 		for image in images:
 			pos = image.gtk.translate_coordinates(self.scroll, 0, 0)
 			if not pos or (pos := pos[self.dim_scroll_n]) == -1: continue # not realized yet
@@ -448,6 +461,22 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		if self.conf.image_opacity < 1.0:
 			image.gtk.set_opacity(self.conf.image_opacity)
 		return image
+
+	def image_click(self, *xy):
+		'Handler for window clicks to translate event x/y to image names.'
+		self.conf._keys_click_n += 1
+		p, fmt = xy[self.dim_scroll_n], self.conf.keys_click_print_format
+		images = list(img for img in self.box_images if img.displayed and img.gtk)
+		for image in images:
+			if not (image.displayed and image.gtk): return
+			if not (xy := image.gtk.translate_coordinates(self, 0, 0)): continue
+			if (o := xy[self.dim_scroll_n]) <= p <= o + image.sz_scroll:
+				print(fmt.format( isodt=ISODT(),
+					image=image, n=self.conf._keys_click_n ), flush=True)
+				break
+		else:
+			self.log.error( 'Failed to match window click'
+				' event with any of the image positions (n={:,d})', len(images) )
 
 
 	def image_set_pixbufs(self, *ev_args, init=False):
