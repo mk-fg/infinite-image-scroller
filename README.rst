@@ -37,10 +37,11 @@ See below for info on general usage and specific features.
 Usage
 -----
 
-Simple usage example::
+Some simple usage examples::
 
   % ./infinite-image-scroller.py image1.jpg image2.jpg image3.jpg
   % ./infinite-image-scroller.py --loop --shuffle path/to/my-image-dir
+  % ./infinite-image-scroller.py -rla 5:0.01 --pause-on-image 5 /mnt/my-images/
 
 Can also read a list or an endless feed of paths (files/dirs) from a
 newline-separated list-file or stdin::
@@ -196,7 +197,5 @@ Potential TODOs
 - Some popup menu (e.g. on right-click) for options maybe.
 
 - Load stuff when manually scrolling in either direction, not just one.
-
-- More keybindings - scroll to next image, linger on one image.
 
 - 2d grid mode.

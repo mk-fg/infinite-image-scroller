@@ -44,7 +44,8 @@ class Image:
 	gtk: Gtk.Image
 	pb_src: GdkPixbuf.Pixbuf = None # source-size pixbuf, only used with sync loading
 	pb_proc: GdkPixbuf.Pixbuf = None # only used with helper module
-	sz: int = None
+	sz: int = None # in dim_scale
+	sz_scroll: int = None
 	sz_chk: int = None
 	displayed: bool = False
 	scrolled: bool = False
@@ -95,6 +96,7 @@ class ScrollerConf:
 	scroll_direction = 'down'
 	scroll_auto = '' # (px, interval)
 	scroll_adjust_k = 2
+	scroll_pause = 0.0
 	scroll_queue_size = 10
 	scroll_queue_preload_at = 0.6
 	_scroll_auto_key_start = 1, 0.01
@@ -278,10 +280,13 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 	def ev_debounce_cb(self, ev, cb, ev_args):
 		self.ev_timers.pop(ev, None)
 		cb(*ev_args)
-	def ev_debounce(self, *ev_args, ev=None, cb=None):
+	def ev_debounce(self, *ev_args, ev=None, cb=None, delay=None):
+		if delay is None: delay = self.conf.misc_event_delay
 		self.ev_debounce_clear(ev)
 		self.ev_timers[ev] = GLib.timeout_add(
-			self.conf.misc_event_delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
+			delay * 1000, self.ev_debounce_cb, ev, cb, ev_args )
+	def ev_delay(self, ev, delay, cb, *ev_args):
+		self.ev_debounce(*ev_args, ev=ev, cb=cb, delay=delay)
 
 
 	def set_visual_rgba(self, w, *ev_data):
@@ -347,12 +352,21 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 
 	def scroll_update(self, adj, offset=None, repeat=False):
+		'Hook to load new images on v/h gtk adjustement (scroll) value changes.'
 		self.ev_debounce_clear('scroll')
 		pos_max = self.dim_box_alloc() - self.get_size()[self.dim_scroll_n]
 		pos = self.dim_scroll_translate(adj.get_value(), pos_max)
+
 		if offset:
-			pos = pos + offset
+			if ( self.conf.scroll_pause and
+					self.scroll_timer and (oc := self.image_at_center(offset * 2)) ):
+				offset = oc
+				self.scroll_adjust(ScrollAdjust.toggle)
+				self.ev_delay( 'scroll-pause',
+					self.conf.scroll_pause, self.scroll_adjust, ScrollAdjust.toggle )
+			pos += offset
 			adj.set_value(self.dim_scroll_translate(pos, pos_max))
+
 		if ( pos >= pos_max * self.conf.scroll_queue_preload_at
 				and self.box_images and (
 				sum(bool(img.displayed) for img in self.box_images) / len(self.box_images)
@@ -362,6 +376,18 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		# Check is to avoid expensive updates/reloads while window is resized
 		if not self.ev_debounce_is_set('set-pixbufs'): self.image_set_pixbufs()
 		return repeat
+
+	def image_at_center(self, offset_max):
+		'Gets offset-from-win-center of next image about to be there or None.'
+		offset_win = getattr(self.get_allocation(), self.dim_scroll) / 2
+		for image in self.box_images:
+			if not (image.displayed and image.gtk): continue
+			pos = image.gtk.translate_coordinates(self.scroll, 0, 0)
+			if not pos: continue # not realized yet
+			offset = pos[1] - (offset_win - image.sz_scroll/2)
+			if offset < 0: continue # moved past center
+			if offset < offset_max: return offset + 1 # found it
+			return # only need to check first image with offset>0
 
 	def image_cycle(self):
 		'Adds/removes images and returns scroll position adjustment based on their size.'
@@ -434,7 +460,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				w, h = ((sz, int(sz / (w / h))) if self.dim_scale_w else (int(sz * (w / h)), sz))
 				pixbuf = image.pb_src.scale_simple(w, h, self.conf.image_scale_algo)
 				image.gtk.set_from_pixbuf(pixbuf)
-				image.displayed = True
+				image.sz, image.sz_scroll, image.displayed = w, h, True
 
 			else: # background pixbuf_proc.so threads, except when init=True
 				image.sz, image.pb_proc = sz, None
@@ -482,6 +508,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				self.image_remove(image)
 			else:
 				image.gtk.set_from_pixbuf(image.pb_proc)
+				image.sz_scroll = getattr(image.pb_proc, f'get_{self.dim_scroll}')()
 				if self.dim_scroll_rev: # scroll pos will change when image is drawn
 					image.gtk.connect('size-allocate', ft.partial(self.image_set_scroll, image))
 				image.pb_proc, image.displayed = None, True
@@ -498,6 +525,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 
 	def scroll_adjust(self, adj):
+		'Auto-scrolling start/pause and speed control function.'
+		self.ev_debounce_clear('scroll-pause')
 		px, s = self.conf.scroll_auto or (0, 0)
 		adj_k = self.conf.scroll_adjust_k
 
@@ -637,9 +666,12 @@ def main(args=None, conf=None):
 		Format is: count[:preload-theshold].
 		Examples: 4:0.8, 10:0.5, 5:0.9. Default: \
 			{conf.scroll_queue_size}:{conf.scroll_queue_preload_at}'''))
-	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]', help=dd('''
-		Auto-scroll by specified number
-			of pixels with specified interval (1s by defaul).'''))
+	group.add_argument('-a', '--auto-scroll', metavar='px[:interval]',
+		help='Auto-scroll by specified number of pixels with specified interval (1s by default).')
+	group.add_argument('-P', '--pause-on-image', type=float, metavar='seconds', help=dd('''
+		Pause for specified number of seconds when each image is centered in the window.
+		Depending on image/window dimensions, it might fit or be cut-off at the top and bottom.
+		Use exact same image/window aspect ratio to have this create a kind of rolling slideshow.'''))
 
 	group = parser.add_argument_group('Appearance')
 	group.add_argument('-o', '--opacity', type=float, metavar='0-1.0', help=dd(f'''
@@ -772,6 +804,7 @@ def main(args=None, conf=None):
 		try: px, s = map(float, conf.scroll_auto.split(':', 1))
 		except ValueError: px, s = float(conf.scroll_auto), 1
 		conf.scroll_auto = px, s
+	if opts.pause_on_image is not None: conf.scroll_pause = opts.pause_on_image
 
 	if opts.scroll_direction or conf.scroll_direction:
 		if opts.scroll_direction: conf.scroll_direction = opts.scroll_direction
