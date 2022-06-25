@@ -177,6 +177,9 @@ or any files specified with ``-c/--conf`` option directly, in that order.
 All sections and parameters in these are optional.
 Values in later files will override earlier ones.
 
+Special "-" (dash) value can be used to disable looking up configs in any
+of the default dirs above, and only use specified one(s) and cli options.
+
 Run script with ``--conf-dump`` option to print resulting configuration
 (after loading all existing/specified files), or ``--conf-dump-defaults``
 to see default configuration.
@@ -192,7 +195,7 @@ Potential TODOs
 
 - Some popup menu (e.g. on right-click) for options maybe.
 
-- Load stuff when scrolling in either direction, not just one.
+- Load stuff when manually scrolling in either direction, not just one.
 
 - More keybindings - scroll to next image, linger on one image.
 

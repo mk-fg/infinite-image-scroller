@@ -53,7 +53,6 @@ class ScrollDirection(enum.IntEnum):
 	left = 0; right = 1; up = 2; down = 3
 
 ScrollAdjust = enum.Enum('ScrollAdjust', 'slower faster toggle')
-
 BrightnessAdaptDir = enum.IntEnum('BrightnessAdapt', 'both up down')
 
 
@@ -125,14 +124,15 @@ class ScrollerConf:
 			if not hasattr(self, k): raise AttributeError(k)
 			setattr(self, k, v)
 
-	def update_from_files(self, *paths):
-		for p in filter(None, os.environ.get('XDG_CONFIG_DIRS', '').split(':')):
-			p = pl.Path(p) / self._conf_file_name
-			if p.exists(): self.update_from_file(p)
-		p = os.environ.get('XDG_CONFIG_HOME')
-		if p: p = pl.Path(p)
-		elif p := os.environ.get('HOME'): p = pl.Path(p) / '.config'
-		if p and (p := p / self._conf_file_name) and p.exists(): self.update_from_file(p)
+	def update_from_files(self, *paths, home_lookups=True):
+		if home_lookups:
+			for p in filter(None, os.environ.get('XDG_CONFIG_DIRS', '').split(':')):
+				p = pl.Path(p) / self._conf_file_name
+				if p.exists(): self.update_from_file(p)
+			p = os.environ.get('XDG_CONFIG_HOME')
+			if p: p = pl.Path(p)
+			elif p := os.environ.get('HOME'): p = pl.Path(p) / '.config'
+			if p and (p := p / self._conf_file_name) and p.exists(): self.update_from_file(p)
 		for p in paths: self.update_from_file(p)
 
 	def update_from_file(self, path):
@@ -235,7 +235,6 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			if self.dim_scroll_v else self.scroll.get_hadjustment() )
 		self.scroll_adj.connect( 'value-changed',
 			ft.partial(self.ev_debounce, ev='scroll', cb=self.scroll_update) )
-		# self.scroll_adj_init = bool(self.dim_scroll_rev)
 		self.scroll_adj_image = None
 
 		hints = dict.fromkeys(self.conf._win_hints_all)
@@ -692,7 +691,8 @@ def main(args=None, conf=None):
 		Path of configuration file(s) to use.
 		Can be specified mutliple times to use multiple config files,
 			with values from the last one overriding earlier ones.
-		{conf._conf_file_name} is looked up in XDG_CONFIG_* paths by default.'''))
+		{conf._conf_file_name} is looked up in XDG_CONFIG_* paths by default.
+		Special value "-" can be used to disable loading config from any of the default locations.'''))
 	group.add_argument('--conf-dump', action='store_true', help=dd('''
 		Print all configuration settings, which will be used with
 			currently detected (and/or specified) configuration file(s), and exit.'''))
@@ -710,24 +710,30 @@ def main(args=None, conf=None):
 			I.e. exit immediately if another app instance is already running.'''))
 	group.add_argument('--dump-css', action='store_true',
 		help='Print css that is used for windows by default and exit.')
+	group.add_argument('--quiet', action='store_true', help='Disable warning/error logging.')
 	group.add_argument('--debug', action='store_true', help='Verbose operation mode.')
 
 	opts = parser.parse_args(sys.argv[1:] if args is None else args)
 
 	global log
 	import logging
+	if opts.debug: log = logging.DEBUG
+	elif opts.quiet: log = logging.CRITICAL
+	else: log = logging.WARNING
 	logging.basicConfig(
 		format='%(asctime)s :: %(levelname)s :: %(message)s',
-		datefmt='%Y-%m-%d %H:%M:%S',
-		level=logging.DEBUG if opts.debug else logging.WARNING )
+		datefmt='%Y-%m-%d %H:%M:%S', level=log )
 	log = get_logger('main')
 
 	if opts.conf_dump_defaults: return conf.pprint('Default configuration options')
-	conf_user_paths = list(pl.Path(p).expanduser() for p in opts.conf or list())
+	conf_user_paths = opts.conf or list()
+	try: conf_home_lookups = conf_user_paths.remove('-')
+	except ValueError: conf_home_lookups = True
+	conf_user_paths = list(pl.Path(p).expanduser() for p in conf_user_paths)
 	for p in conf_user_paths:
 		if not os.access(p, os.R_OK):
 			parser.error(f'Specified config file is missing or inaccessible: {p}')
-	conf.update_from_files(*conf_user_paths)
+	conf.update_from_files(*conf_user_paths, home_lookups=conf_home_lookups)
 	if opts.conf_dump: return conf.pprint('Current configuration file(s) options')
 	if opts.dump_css: return print(conf._win_css.replace('\t', '  '), end='')
 
