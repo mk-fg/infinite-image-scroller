@@ -32,6 +32,11 @@ See below for info on general usage and specific features.
 .. contents::
   :backlinks: none
 
+URLs for this project repository:
+
+- https://github.com/mk-fg/infinite-image-scroller
+- https://codeberg.org/mk-fg/infinite-image-scroller
+- https://fraggod.net/code/git/infinite-image-scroller
 
 
 Usage
