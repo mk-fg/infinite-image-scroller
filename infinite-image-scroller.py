@@ -228,7 +228,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 		self.box = Gtk.VBox if self.dim_scroll_v else Gtk.HBox
 		self.box = self.box(spacing=self.conf.misc_box_spacing, expand=True)
 		self.scroll.add(self.box)
-		self.box_images, self.box_images_init = cs.deque(), True
+		self.box_images = cs.deque()
+		self.box_images_init = self.box_images_cooldown = None
 		self.ev_timers = dict()
 
 		self.dim_scale, self.dim_scroll, self.dim_scroll_n = (
@@ -381,9 +382,9 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 			adj.set_value(self.dim_scroll_translate(pos, pos_max))
 
 		if ( pos >= pos_max * self.conf.scroll_queue_preload_at
-				and self.box_images and (
+				and (not self.box_images or (
 				sum(bool(img.displayed) for img in self.box_images) / len(self.box_images)
-					> self.conf.scroll_queue_preload_at )):
+					> self.conf.scroll_queue_preload_at ))):
 			pos += self.image_cycle()
 			adj.set_value(self.dim_scroll_translate(pos, pos_max))
 		# Check is to avoid expensive updates/reloads while window is resized
@@ -430,10 +431,15 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def image_add(self):
 		'Adds image and returns it, or returns None if there is nothing more to add.'
+		if self.box_images_cooldown: return
 		for n in range(self.conf.image_open_attempts):
 			try: p = next(self.src_paths_iter)
 			except StopIteration: p = None
 			if not p: return
+			if isinstance(p, float):
+				self.box_images_cooldown = GLib.timeout_add(
+					p * 1000, lambda: setattr(self, 'box_images_cooldown', None) )
+				return
 			image = self.image_load(p)
 			if image: break
 		else:
@@ -481,8 +487,8 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 
 	def image_set_pixbufs(self, *ev_args, init=False):
 		'Must be called to set image widget contents to resized pixbufs'
-		if self.box_images_init:
-			self.box_images_init, init = False, True
+		if not self.box_images_init:
+			self.box_images_init = init = True
 			init_sz = getattr(self.get_allocation(), self.dim_scroll) * 1.5
 			for n in range(self.conf.scroll_queue_size): self.image_add()
 
@@ -623,14 +629,22 @@ def shuffle_iter(src_paths, crop_ratio=0.25):
 			used, src_paths = 0, list(filter(None, src_paths))
 		yield p
 
-def loop_iter(src_paths_func):
+def loop_iter(src_paths_func, no_files_wait=None):
 	while True:
-		for p in src_paths_func(): yield p
+		n = delay = 0
+		for p in src_paths_func(): n += 1; yield p
+		if not n:
+			if no_files_wait and no_files_wait > 0: delay = no_files_wait
+			else:
+				log.debug('No files found during source-path(s) scan, stopped checking for images')
+				break
+		log.debug('Source path(s) loop iteration done (delay={:,.1f}s): {:,d} file(s)', delay, n)
+		if delay: yield float(delay)
 
 def file_iter(src_paths):
 	for path in map(pl.Path, src_paths):
 		if not path.exists():
-			log.warn('Path does not exists: {}', path)
+			log.warning('Path does not exists: {}', path)
 			continue
 		if path.is_dir():
 			for root, dirs, files in os.walk(str(path)):
@@ -666,6 +680,11 @@ def main(args=None, conf=None):
 		Loop (pre-buffered) input list of images infinitely.
 		Will re-read any dirs in image_path on each loop cycle,
 			and reshuffle files if -r/--shuffle is also specified.'''))
+	group.add_argument('--loop-files-wait',
+		type=float, metavar='seconds', default=3.0, help=dd('''
+			Number of seconds to wait between loop iterations/checks, if -l/--loop
+				is used, but all specified paths are empty or missing. Default: %(default).1fs
+			Setting this to 0 or negative number will stop checking paths for images instead.'''))
 
 	group = parser.add_argument_group('Image processing')
 	group.add_argument('-z', '--scaling-interp',
@@ -818,7 +837,7 @@ def main(args=None, conf=None):
 	if opts.loop:
 		src_func = lambda s=list(src_paths): file_iter(s)
 		if opts.shuffle: src_func = lambda f=src_func: shuffle_iter(f())
-		src_paths_iter = loop_iter(src_func)
+		src_paths_iter = loop_iter(src_func, opts.loop_files_wait)
 	elif opts.shuffle: src_paths_iter = shuffle_iter(file_iter(src_paths))
 	else: src_paths_iter = file_iter(src_paths)
 
