@@ -95,8 +95,9 @@ class ScrollerConf:
 		' stick maximize fullscreen keep_above keep_below decorated'
 		' deletable skip_taskbar skip_pager urgency accept_focus'
 		' auto_startup_notification mnemonics_visible focus_visible' ).split()
-	_win_type_hints_all = dict(
-		(e.value_nick, v) for v, e in Gdk.WindowTypeHint.__enum_values__.items() if v )
+	_win_type_hints_all = dict( ((e.value_nick, v) for v, e in es.items() if v)
+		if (es := getattr(et := Gdk.WindowTypeHint, '__enum_values__', None))
+		else ((e.name.lower(), e.value) for e in et if e.value) )
 
 	scroll_direction = 'down'
 	scroll_auto = '' # px:interval
@@ -337,14 +338,15 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 	_key_sums = _key_masks = None
 	def window_key(self, w, ev):
 		if not self._key_masks:
-			self._key_masks = dict()
-			for st, mod in Gdk.ModifierType.__flags_values__.items():
-				if ( len(mod.value_names) != 1
-					or not mod.first_value_nick.endswith('-mask') ): continue
-				assert st not in self._key_masks, [mod.first_value_nick, self._key_masks[st]]
-				mod = mod.first_value_nick[:-5]
-				if mod.startswith('modifier-reserved-'): mod = 'res-{}'.format(mod[18:])
-				self._key_masks[st] = mod
+			self._key_masks, flags = dict(), (
+				((v,m.first_value_nick) for v,m in es.items() if len(m.value_names) == 1)
+				if (es := getattr(et := Gdk.ModifierType, '__flags_values__', None))
+				else ((e.value, e.name.lower().replace('_', '-')) for e in et) )
+			for st, mod in flags:
+				if not mod.endswith('-mask'): continue
+				assert st not in self._key_masks, [mod, self._key_masks[st]]
+				if mod.startswith('modifier-reserved-'): mod = f'res-{mod[18:]}'
+				self._key_masks[st] = mod[:-5]
 		if not self._key_sums:
 			self._key_sums = dict()
 			for k, action in [
@@ -902,7 +904,7 @@ def main(args=None, conf=None):
 	if opts.wm_type_hints or conf.win_type_hints or True:
 		hints = opts.wm_type_hints or conf.win_type_hints
 		conf.win_type_hints = Gdk.WindowTypeHint.NORMAL
-		for k in hints.replace(',', ' ').split():
+		for k in hints.replace(',', ' ').lower().split():
 			conf.win_type_hints |= conf._win_type_hints_all[k]
 
 	conf.image_scale_algo = getattr(
