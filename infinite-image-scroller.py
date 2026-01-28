@@ -168,7 +168,7 @@ class ScrollerConf:
 
 	def pprint(self, title=None):
 		cat, chk = None, re.compile(
-			'^({})_(.*)$'.format('|'.join(map(re.escape, self._conf_sections))) )
+			r'^({})_(.*)\Z'.format('|'.join(map(re.escape, self._conf_sections))) )
 		if title: print(f';; {title}')
 		for k in self.__class__.__dict__.keys():
 			m = chk.search(k)
@@ -876,9 +876,9 @@ def main(args=None, conf=None):
 
 	if opts.pos or conf.win_pos:
 		if opts.pos: conf.win_pos = opts.pos
-		m = re.search(
-			r'^((?:M?\d+|S)(?:x(?:M?\d+|S))?)?'
-			r'([-+]M?\d+)?([-+]M?\d+)?$', conf.win_pos )
+		m = re.fullmatch(
+			r'((?:M?\d+|S)(?:x(?:M?\d+|S))?)?'
+			r'([-+]M?\d+)?([-+]M?\d+)?', conf.win_pos )
 		if not m: parser.error(f'Invalid size/position spec: {conf.win_pos!r}')
 		size, x, y = m.groups()
 		size_fs = size if 'x' not in size else None
