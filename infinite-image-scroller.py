@@ -11,6 +11,11 @@ gi.require_version('GLib', '2.0')
 gi.require_version('GdkPixbuf', '2.0')
 from gi.repository import Gtk, Gdk, GdkPixbuf, GLib
 
+try:
+	from gi.repository import GLibUnix
+	glib_signal_add = GLibUnix.signal_add
+except ImportError: glib_signal_add = GLib.unix_signal_add # deprecated
+
 
 class LogMessage:
 	def __init__(self, fmt, a, k): self.fmt, self.a, self.k = fmt, a, k
@@ -206,7 +211,7 @@ class ScrollerWindow(Gtk.ApplicationWindow):
 				for n in range(self.conf.image_proc_threads) )
 			for t in self.thread_list: t.start()
 			self.thread_kill = threading.get_ident(), signal.SIGUSR1
-			GLib.unix_signal_add( GLib.PRIORITY_DEFAULT,
+			glib_signal_add( GLib.PRIORITY_DEFAULT,
 				self.thread_kill[1], self.image_set_pixbuf_thread_cb )
 			self.thread_results = list()
 
